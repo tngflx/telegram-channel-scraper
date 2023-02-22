@@ -20,7 +20,7 @@ const getChat = async () => {
 
 const chatHistory = async (chats) => {
     let lastIdofMsgs = await db.getLastMsgId();
-    const { maxMsg, limit, keywords } = config.telegram.msgHistory
+    const { maxMsg, limit } = config.telegram.msgHistory
 
     const max = maxMsg
     let offsetId = 0
@@ -47,23 +47,56 @@ const chatHistory = async (chats) => {
     }
 
     /**
+     * TODO
+     * Categories to filter out from selection
+     * 1. If locum replied with taken
+     * 2. If distance too far (google map api)
+     * 3. If pay is too low, below rm40
+     * 4. If unpaid rest
+     * 
+     * TODO2
+     * hiring advertisement
+     * 1. To categorized in different json object
+     * */
+
+    /**
      * Filter by keywords 
      * @var {keywords} taken if locum already taken, we should take out that object from array
      * @var {keywords} unpaid if locum unpaid for rest, take out too
-     * 
+     * 1st step : plucking certain object of interest only as our array
+     * 2nd step : filter out not fit locums
      */
-    full_arr = full_arr.map(({ message, className, isReply, replies, replyTo, id }) => {
-        if (className === 'Message') {
-            let trimmed_lower_message = message.trim().toLowerCase();
-            let check_keyword = keywords.some((substr) => trimmed_lower_message.includes(substr))
 
-            if (isReply && check_keyword) {
-                let { replyToMsgId } = replyTo
-                return ({ message, isReply, replies, replyToMsgId, id });
-            }
-            return ({ message, isReply, replies, replyTo, id });
-        }
-    }).filter(n => n !== undefined)
+    //let changed_full_arr = full_arr.map(({ message, className, isReply, replies, replyTo, id }) => {
+    //    if (className === 'Message') {
+    //        let trimmed_lower_message = message.trim().toLowerCase();
+    //        let check_keyword = keywords.some((substr) => trimmed_lower_message.includes(substr))
+    //        let received_replies_num = replies?.replies;
+    //        let { maxId } = replies || {}
+
+    //        if (received_replies_num > 0) {
+    //            return ({ message, isReply, received_replies_num, received_reply_id: maxId, replies, replyTo, id })
+
+    //        }
+
+    //        if (isReply && check_keyword) {
+    //            let { replyToMsgId } = replyTo
+    //            return ({ message, isReply, replies, replyToMsgId, id });
+    //        }
+    //        return ({ message, isReply, replies, replyTo, id });
+    //    }
+    //}).filter(({ received_replies_num, isReply, ...n } = {}) =>
+    //    (n !== undefined && (received_replies_num || isReply))
+    //)
+
+
+
+    full_arr = await filter_taken_locum(full_arr);
+    filter_taken_arr.filter(({ received_replies_num, isreply, ...n } = {}) =>
+        (n !== undefined && (received_replies_num || isreply))
+    )
+
+
 
     let message2 = [...new Map(full_arr.map((m) => [m.message, m])).values()];
 
@@ -84,7 +117,36 @@ const chatHistory = async (chats) => {
     console.log(`${hours}:${mins} - [${lastIdofMsgs}]`)
 }
 
-let sent = []
+const filter_taken_locum = async (full_arr) => {
+    let filter_taken_arr = [];
+    const { keywords } = config.telegram.msgHistory
+
+    for (const { message, className, isReply, replies, replyTo, id, date, peerId } of full_arr) {
+        if (className === 'Message' && !isReply) {
+            let received_replies_num = replies?.replies;
+            let { channelId } = peerId
+
+            if (received_replies_num > 0) {
+                let { messages, users } = await client.invoke(
+                    new Api.messages.GetReplies({
+                        peer: channelId,
+                        msgId: id
+                    })
+                );
+                messages.forEach(({ message: reply_msg, date }) => {
+                    let trimmed_lower_reply_msg = reply_msg.trim().toLowerCase();
+                    let check_keyword = keywords.some((substr) => trimmed_lower_reply_msg.includes(substr))
+                    if (check_keyword) return
+                    else
+                        filter_taken_arr.push({ message, isReply, received_replies_num, replies, replyTo, id })
+                })
+            }
+
+            filter_taken_arr.push({ message, isReply, replies, replyTo, id });
+        }
+    }
+    return filter_taken_arr;
+}
 
 const printMessages = (messages) => {
     const formatted = messages.map(formatMessage)
