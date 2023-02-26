@@ -35,7 +35,9 @@ const chatHistory = async (chats) => {
                 limit
             });
 
-            messages = history.filter(filterLastDay);
+            messages = history.filter(filterLastDay).filter(({ isReply, className, message }) =>
+                className === 'Message' && !isReply && checkIfContainKeyword(message, ['locum']) && !checkIfContainKeyword(message, ['female', 'lady'])
+            )
             full_arr = full_arr.concat(messages);
             messages.length > 0 && (offsetId = messages[0].id);
 
@@ -59,13 +61,7 @@ const chatHistory = async (chats) => {
      * 1. To categorized in different json object
      * */
 
-    /**
-     * Filter by keywords 
-     * @var {keywords} taken if locum already taken, we should take out that object from array
-     * @var {keywords} unpaid if locum unpaid for rest, take out too
-     * 1st step : plucking certain object of interest only as our array
-     * 2nd step : filter out not fit locums
-     */
+
 
     //let changed_full_arr = full_arr.map(({ message, className, isReply, replies, replyTo, id }) => {
     //    if (className === 'Message') {
@@ -90,17 +86,11 @@ const chatHistory = async (chats) => {
     //)
 
 
+    const no_repeats = uniqByKeepFirst(full_arr, it => it.message);
+    const filter_taken = await filter_taken_locum(no_repeats);
+    const filter_distance = await filter_locum_distance(filter_taken)
 
-    full_arr = await filter_taken_locum(full_arr);
-    filter_taken_arr.filter(({ received_replies_num, isreply, ...n } = {}) =>
-        (n !== undefined && (received_replies_num || isreply))
-    )
-
-
-
-    let message2 = [...new Map(full_arr.map((m) => [m.message, m])).values()];
-
-    const showNew = full_arr.filter(({ id }) => id == lastIdofMsgs)
+    const showNew = full_arr.filter(({ id }) => id > lastIdofMsgs)
     const noRepeats = uniqueArray(showNew, 'id')
     const usersMsg = noRepeats.filter(filterUsersMessages)
 
@@ -117,40 +107,69 @@ const chatHistory = async (chats) => {
     console.log(`${hours}:${mins} - [${lastIdofMsgs}]`)
 }
 
+/**
+ * Filter by keywords 
+ * @var {keywords} taken if locum already taken, we should take out that object from array
+ * @var {keywords} unpaid if locum unpaid for rest, take out too
+ * 1st step : plucking certain object of interest only as our array
+ * 2nd step : filter out not fit locums
+ */
 const filter_taken_locum = async (full_arr) => {
     let filter_taken_arr = [];
     const { keywords } = config.telegram.msgHistory
 
-    for (const { message, className, isReply, replies, replyTo, id, date, peerId } of full_arr) {
-        if (className === 'Message' && !isReply) {
-            let received_replies_num = replies?.replies;
-            let { channelId } = peerId
+    for (const { message, replies, replyTo, id, date, peerId, ...rest } of full_arr) {
+        let received_replies_num = replies?.replies;
+        let { channelId } = peerId
 
-            if (received_replies_num > 0) {
-                let { messages, users } = await client.invoke(
-                    new Api.messages.GetReplies({
-                        peer: channelId,
-                        msgId: id
-                    })
-                );
-                messages.forEach(({ message: reply_msg, date }) => {
-                    let trimmed_lower_reply_msg = reply_msg.trim().toLowerCase();
-                    let check_keyword = keywords.some((substr) => trimmed_lower_reply_msg.includes(substr))
-                    if (check_keyword) return
-                    else
-                        filter_taken_arr.push({ message, isReply, received_replies_num, replies, replyTo, id })
+        if (received_replies_num > 0) {
+            let { messages: received_replies_msgs, users } = await client.invoke(
+                new Api.messages.GetReplies({
+                    peer: channelId,
+                    msgId: id
                 })
+            );
+            await new Promise(resolve => setTimeout(resolve, 500));
+            for (const { message: reply_msg, date } of received_replies_msgs) {
+                if (checkIfContainKeyword(reply_msg, keywords)) continue;
+                else
+                    filter_taken_arr.push({ parent_msg: message, received_replies_num, reply_msg, replies, replyTo, id })
             }
 
-            filter_taken_arr.push({ message, isReply, replies, replyTo, id });
-        }
+        } else
+            filter_taken_arr.push({ parent_msg: message, replies, replyTo, id });
+
     }
     return filter_taken_arr;
+}
+
+const filter_locum_distance = (full_arr) => {
+    for (const { parent_msg } of full_arr) {
+        let res = parent_msg.split('\n').filter((m) => m.trim() !== '')
+        console.log(res[2])
+    }
+}
+
+const checkIfContainKeyword = (strings, keywords) => {
+    let trimmed_lower_strings = strings.trim().toLowerCase();
+    return keywords.some((substr) => trimmed_lower_strings.includes(substr))
 }
 
 const printMessages = (messages) => {
     const formatted = messages.map(formatMessage)
     formatted.forEach(e => console.log(e))
+}
+
+const uniqByKeepFirst = (a, key) => {
+    let seen = new Set();
+    return a.filter(item => {
+        let k = key(item);
+        if (seen.has(k))
+            return false
+        else
+            return seen.add(k)
+        //    return seen.has(k) ? false : seen.add(k);
+    });
 }
 
 const uniqueArray = function (myArr, prop) {
@@ -159,7 +178,7 @@ const uniqueArray = function (myArr, prop) {
     });
 }
 const filterLastDay = ({ date }) => new Date(date * 1e3) > dayRange()
-const dayRange = () => Date.now() - new Date(86400000 * 5)
+const dayRange = () => Date.now() - new Date(86400000 * 2)
 const filterUsersMessages = ({ _ }) => _ === 'message'
 
 const formatMessage = ({ message, date, id }) => {

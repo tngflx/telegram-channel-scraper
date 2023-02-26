@@ -10,7 +10,7 @@ const config = {
         msgHistory: {
             maxMsg: 400,
             limit: 300,
-            keywords: ["taken", "unpaid"]
+            keywords: ["taken", "unpaid" ]
         },
         getChat: {
             limit: 50
