@@ -146,7 +146,6 @@ const filter_taken_locum = async (full_arr) => {
 const filter_locum_distance = (full_arr) => {
     for (const { parent_msg } of full_arr) {
         let res = parent_msg.split('\n').filter((m) => m.trim() !== '')
-        sakdljfklasjdfljsadkljflksajdlfjasldjfklsjajdf
         console.log(res[2])
     }
 }
