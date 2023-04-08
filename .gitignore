@@ -9,3 +9,5 @@ bin
 *.njsproj
 *.user
 *.sln
+/package-lock.json
+/yarn.lock
