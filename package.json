@@ -14,8 +14,9 @@
   "author": "abdhass",
   "license": "ISC",
   "dependencies": {
+    "@googlemaps/google-maps-services-js": "^3.3.27",
     "dotenv": "^6.2.0",
-    "node-fetch": "^2.6.7",
+    "node-fetch": "^2.6.9",
     "telegram": "^2.15.10"
   }
 }

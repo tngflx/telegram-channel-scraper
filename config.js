@@ -10,11 +10,16 @@ const config = {
         msgHistory: {
             maxMsg: 400,
             limit: 300,
-            keywords: ["taken", "unpaid" ]
+            skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady"],
+            skip_location: ["JB", "Johor"],
+            wanted_states: ['Selangor', 'Kuala Lumpur']
         },
         getChat: {
             limit: 50
         },
+    },
+    gmap: {
+        API_KEY: process.env.GOOGLEMAP_API_KEY
     },
     dbfile: process.env.DB_FILE,
     chatdb: process.env.CHAR_FILE,

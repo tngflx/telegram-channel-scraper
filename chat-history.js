@@ -1,7 +1,9 @@
-const config = require('./config')
+const { telegram: { msgHistory } } = require('./config')
 const fetch = require("node-fetch")
 const db = require('./utils/db');
 const { Api } = require("telegram");
+const { Gmap } = require('./utils/googlemap')
+const gmap = new Gmap()
 
 const { client } = require('./utils/init')
 
@@ -20,32 +22,40 @@ const getChat = async () => {
 
 const chatHistory = async (chats) => {
     let lastIdofMsgs = await db.getLastMsgId();
-    const { maxMsg, limit } = config.telegram.msgHistory
+    const { maxMsg, limit } = msgHistory
 
     const max = maxMsg
     let offsetId = 0
-    let full_arr = [],
+    let preliminary_selected_locums = [],
         messages = [];
 
     for (let { id, name } of chats) {
         do {
             let history = await client.getMessages(id, {
                 max_id: -offsetId,
-                offset: -full_arr.length,
+                offset: -preliminary_selected_locums.length,
                 limit
             });
 
+            /**
+             * Preliminary check if the messages are truly message and not vote post or others
+             * if message contain keyword female or lady, don't take the locum'
+             */
             messages = history.filter(filterLastDay).filter(({ isReply, className, message }) =>
-                className === 'Message' && !isReply && checkIfContainKeyword(message, ['locum']) && !checkIfContainKeyword(message, ['female', 'lady'])
+                className === 'Message'
+                && !isReply && checkIfContainKeyword(message, ['locum'])
+                && !checkIfContainKeyword(message, msgHistory.skip_keywords)
+                && !checkIfContainKeyword(message,msgHistory.skip_location)
             )
-            full_arr = full_arr.concat(messages);
+
+            preliminary_selected_locums = preliminary_selected_locums.concat(messages);
             messages.length > 0 && (offsetId = messages[0].id);
 
             if (messages.length > 0) {
                 await db.updateLastMsgId(messages[0].id)
             }
             history = null;
-        } while (messages.length === limit && full_arr.length < max)
+        } while (messages.length === limit && preliminary_selected_locums.length < max)
     }
 
     /**
@@ -61,38 +71,15 @@ const chatHistory = async (chats) => {
      * 1. To categorized in different json object
      * */
 
+    const showNew = preliminary_selected_locums.filter(({ id }) =>
+        id > lastIdofMsgs)
+    const noRepeats = uniqueArray(showNew, 'id')
 
-
-    //let changed_full_arr = full_arr.map(({ message, className, isReply, replies, replyTo, id }) => {
-    //    if (className === 'Message') {
-    //        let trimmed_lower_message = message.trim().toLowerCase();
-    //        let check_keyword = keywords.some((substr) => trimmed_lower_message.includes(substr))
-    //        let received_replies_num = replies?.replies;
-    //        let { maxId } = replies || {}
-
-    //        if (received_replies_num > 0) {
-    //            return ({ message, isReply, received_replies_num, received_reply_id: maxId, replies, replyTo, id })
-
-    //        }
-
-    //        if (isReply && check_keyword) {
-    //            let { replyToMsgId } = replyTo
-    //            return ({ message, isReply, replies, replyToMsgId, id });
-    //        }
-    //        return ({ message, isReply, replies, replyTo, id });
-    //    }
-    //}).filter(({ received_replies_num, isReply, ...n } = {}) =>
-    //    (n !== undefined && (received_replies_num || isReply))
-    //)
-
-
-    const no_repeats = uniqByKeepFirst(full_arr, it => it.message);
-    const filter_taken = await filter_taken_locum(no_repeats);
+    const no_repeats = uniqByKeepFirst(preliminary_selected_locums, it => it.message);
+    const filter_taken = await filter_skipped_keywords(no_repeats);
     const filter_distance = await filter_locum_distance(filter_taken)
 
-    const showNew = full_arr.filter(({ id }) => id > lastIdofMsgs)
-    const noRepeats = uniqueArray(showNew, 'id')
-    const usersMsg = noRepeats.filter(filterUsersMessages)
+
 
     if (usersMsg.length > 0) {
         const done = await sendToServer(usersMsg)
@@ -108,20 +95,23 @@ const chatHistory = async (chats) => {
 }
 
 /**
- * Filter by keywords 
- * @var {keywords} taken if locum already taken, we should take out that object from array
- * @var {keywords} unpaid if locum unpaid for rest, take out too
+ * Filter by skipped_keywords 
+ * @var {skipped_keywords} taken if locum already taken, we should take out that object from array
+ * @var {skipped_keywords} unpaid if locum unpaid for rest, take out too
  * 1st step : plucking certain object of interest only as our array
  * 2nd step : filter out not fit locums
  */
-const filter_taken_locum = async (full_arr) => {
+const filter_skipped_keywords = async (preliminary_selected_locums) => {
     let filter_taken_arr = [];
-    const { keywords } = config.telegram.msgHistory
+    const { skipped_keywords, skip_location } = msgHistory
 
-    for (const { message, replies, replyTo, id, date, peerId, ...rest } of full_arr) {
+    for (const { message, replies, replyTo, id, date, peerId, ...rest } of preliminary_selected_locums) {
         let received_replies_num = replies?.replies;
         let { channelId } = peerId
 
+        /**
+         * Check if reply to the message contains word taken or any other keyword, then skip the locum
+         */
         if (received_replies_num > 0) {
             let { messages: received_replies_msgs, users } = await client.invoke(
                 new Api.messages.GetReplies({
@@ -131,7 +121,7 @@ const filter_taken_locum = async (full_arr) => {
             );
             await new Promise(resolve => setTimeout(resolve, 500));
             for (const { message: reply_msg, date } of received_replies_msgs) {
-                if (checkIfContainKeyword(reply_msg, keywords)) continue;
+                if (checkIfContainKeyword(reply_msg, skipped_keywords)) continue;
                 else
                     filter_taken_arr.push({ parent_msg: message, received_replies_num, reply_msg, replies, replyTo, id })
             }
@@ -143,16 +133,39 @@ const filter_taken_locum = async (full_arr) => {
     return filter_taken_arr;
 }
 
-const filter_locum_distance = (full_arr) => {
-    for (const { parent_msg } of full_arr) {
-        let res = parent_msg.split('\n').filter((m) => m.trim() !== '')
-        console.log(res[2])
+/**
+ * use google map to estimate distance and duration from locum place
+ * @param {any} preliminary_selected_locums
+ */
+const filter_locum_distance = async (preliminary_selected_locums) => {
+    let accepted_locum = []
+
+    for (const { full_msg } of preliminary_selected_locums) {
+        let msg_body_lines = full_msg.split('\n').filter((m) => m.trim() !== '')
+        for (const msg_line of msg_body_lines) {
+            let clinic_name = msg_line.match(/klinik(.*)/gi)
+            if (clinic_name) {
+                let gmap_place = await gmap.getPlace(clinic_name[0])
+                let { distance, duration } = await gmap.getDistance(gmap_place)
+
+                /**
+                 * If the trip needed is more than an hour, reject the locum
+                 */
+                if (parseInt(duration) < 60) {
+                    accepted_locum.push(full_msg)
+                }
+                continue;
+            }
+        }
     }
+
+    if (accepted_locum.length > 30)
+        return accepted_locum
 }
 
-const checkIfContainKeyword = (strings, keywords) => {
+const checkIfContainKeyword = (strings, skipped_keywords) => {
     let trimmed_lower_strings = strings.trim().toLowerCase();
-    return keywords.some((substr) => trimmed_lower_strings.includes(substr))
+    return skipped_keywords.some((substr) => trimmed_lower_strings.includes(substr))
 }
 
 const printMessages = (messages) => {
