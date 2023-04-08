@@ -7,9 +7,13 @@ const gmap = new Gmap()
 
 const { client } = require('./utils/init')
 
-const getChat = async () => {
+/**
+ * Get groups in telegram to get channel ID
+ * @returns
+ */
+const getChannelsID = async () => {
     const dialogs = await client.getDialogs({
-        limit: 30
+        limit: 10
     });
 
     return dialogs.reduce((accum, { name, id }, idx) => {
@@ -20,16 +24,18 @@ const getChat = async () => {
     }, [])
 }
 
-const chatHistory = async (chats) => {
-    let lastIdofMsgs = await db.getLastMsgId();
+const chatHistory = async (channels) => {
+
     const { maxMsg, limit } = msgHistory
 
     const max = maxMsg
     let offsetId = 0
-    let preliminary_selected_locums = [],
+    let preliminary_selected_locums = new Set(),
         messages = [];
 
-    for (let { id, name } of chats) {
+    for (const [channel_index, { id, name }] of channels.entries()) {
+        let lastIdofMsgs = await db.getLastMsgId(name);
+
         do {
             let history = await client.getMessages(id, {
                 max_id: -offsetId,
@@ -45,17 +51,22 @@ const chatHistory = async (chats) => {
                 className === 'Message'
                 && !isReply && checkIfContainKeyword(message, ['locum'])
                 && !checkIfContainKeyword(message, msgHistory.skip_keywords)
-                && !checkIfContainKeyword(message,msgHistory.skip_location)
+                && !checkIfContainKeyword(message, msgHistory.skip_location)
             )
 
-            preliminary_selected_locums = preliminary_selected_locums.concat(messages);
+            preliminary_selected_locums.add(...[].concat(messages));
             messages.length > 0 && (offsetId = messages[0].id);
 
             if (messages.length > 0) {
-                await db.updateLastMsgId(messages[0].id)
+                channels[channel_index]['lastMsgId'] = messages[0].id
+                await db.updateLastMsgId(channels)
             }
             history = null;
         } while (messages.length === limit && preliminary_selected_locums.length < max)
+
+        //const showNew = preliminary_selected_locums.filter(({ id }) =>
+        //    id > lastIdofMsgs)
+        //const noRepeats = uniqueArray(showNew, 'id')
     }
 
     /**
@@ -70,10 +81,6 @@ const chatHistory = async (chats) => {
      * hiring advertisement
      * 1. To categorized in different json object
      * */
-
-    const showNew = preliminary_selected_locums.filter(({ id }) =>
-        id > lastIdofMsgs)
-    const noRepeats = uniqueArray(showNew, 'id')
 
     const no_repeats = uniqByKeepFirst(preliminary_selected_locums, it => it.message);
     const filter_taken = await filter_skipped_keywords(no_repeats);
@@ -202,6 +209,6 @@ const formatMessage = ({ message, date, id }) => {
 }
 
 module.exports = {
-    getChat,
+    getChannelsID,
     chatHistory,
 }

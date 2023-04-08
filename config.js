@@ -21,8 +21,7 @@ const config = {
     gmap: {
         API_KEY: process.env.GOOGLEMAP_API_KEY
     },
-    dbfile: process.env.DB_FILE,
-    chatdb: process.env.CHAR_FILE,
+    channelinfodb: process.env.CHANNELSINFO_FILE,
     server: process.env.SERVER_URL
 }
 

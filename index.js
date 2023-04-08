@@ -1,4 +1,4 @@
-const { getChat, chatHistory } = require('./chat-history')
+const { getChannelsID, chatHistory } = require('./chat-history')
 const db = require('./utils/db');
 const {checkLogin} = require('./utils/init');
 
@@ -12,7 +12,7 @@ const start = async () => {
   let chat = await db.getChat();
 
   if (!chat) {
-    chat = await getChat();
+    chat = await getChannelsID();
     await db.updateChat(chat)
   }
 

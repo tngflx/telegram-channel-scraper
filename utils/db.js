@@ -1,14 +1,14 @@
 const config = require('../config');
 const fs = require("fs");
-const path = require("path")
-const DBFILE = config.dbfile;
-const CHATDB = config.chatdb;
+const path = require("path");
+const { channelinfodb } = require('../config');
+const CHANNELDB = channelinfodb;
 
 async function readDb(file) {
     return new Promise((res, rej) => {
         let dir = path.dirname(file)
         if (!fs.existsSync(dir)) rej(new Error("directory not found"))
-        
+
         fs.readFile(file, 'utf8', (err, data) => {
             err ? rej(err) : res(data)
         });
@@ -28,21 +28,19 @@ async function writeFile(json, file) {
     })
 }
 
-async function updateLastMsgId(num) {
+async function updateLastMsgId(original_data) {
     try {
-        const work = await writeFile({
-            lastMsgId: num
-        }, DBFILE)
+        return await writeFile(original_data, CHANNELDB)
     } catch (err) {
         console.log("error, couldnt save to file " + err)
     }
 }
 
-async function getLastMsgId() {
+async function getLastMsgId(channelName) {
     try {
-        const readFile = await readDb(DBFILE);
+        const readFile = await readDb(CHANNELDB);
         const file = JSON.parse(readFile)
-        return file.lastMsgId;
+        return findDataWithValue(file, channelName)
     } catch (err) {
         console.log("file not found so making a empty one and adding default value ")
         await updateLastMsgId(1);
@@ -50,11 +48,22 @@ async function getLastMsgId() {
     }
 }
 
+function findDataWithValue(data, searchValue) {
+    return Object.values(data).reduce((acc, val, index) => {
+        if (val === searchValue) {
+            acc = data[index];
+        } else if (typeof val === "object") {
+            acc = acc.concat(findDataWithValue(val, searchValue));
+        }
+        return acc;
+    }, {});
+}
+
 async function getChat() {
     try {
-        const readFile = await readDb(CHATDB);
+        const readFile = await readDb(CHANNELDB);
         const file = JSON.parse(readFile)
-        return file.chat;
+        return file;
     } catch (err) {
         console.log(err);
         return false;
@@ -63,9 +72,7 @@ async function getChat() {
 
 async function updateChat(obj) {
     try {
-        const work = await writeFile({
-            chat: obj
-        }, CHATDB)
+        const work = await writeFile(obj, CHANNELDB)
     } catch (err) {
         console.log("error, couldnt save chat to file " + err)
     }
