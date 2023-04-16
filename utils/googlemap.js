@@ -33,7 +33,7 @@ class Gmap {
         const checkIfContainWantedCity = msgHistory.wanted_states.some(value =>
             formatted_address.includes(value)
         );
-        if (!checkIfContainWantedCity) return;
+        if (!checkIfContainWantedCity) return 'state_too_far';
 
         const params = {
             key,
@@ -67,7 +67,7 @@ class Gmap {
 
         return this.client.findPlaceFromText({ params })
             .then(({ data }) => {
-                let { place_id, name, formatted_address, geometry } = data.candidates[0];
+                let { place_id, name, formatted_address, geometry } = data?.candidates[0];
 
                 return {
                     place_id,
@@ -76,7 +76,7 @@ class Gmap {
                     location: geometry?.location
                 };
             }).catch((error) => {
-                console.log(error.response.data.error_message);
+                console.error(error);
                 return null;
             })
 

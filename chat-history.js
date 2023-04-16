@@ -30,16 +30,17 @@ const chatHistory = async (channels) => {
 
     const max = maxMsg
     let offsetId = 0
-    let preliminary_selected_locums = new Set(),
-        messages = [];
+    let preliminary_selected_locums = [],
+        messages = [],
+        showNew = []
 
     for (const [channel_index, { id, name }] of channels.entries()) {
-        let lastIdofMsgs = await db.getLastMsgId(name);
+        let lastIdofMsgs = await db.getLastMsgId(channel_index);
 
         do {
             let history = await client.getMessages(id, {
                 max_id: -offsetId,
-                offset: -preliminary_selected_locums.length,
+                offset: -(preliminary_selected_locums.length),
                 limit
             });
 
@@ -54,7 +55,7 @@ const chatHistory = async (channels) => {
                 && !checkIfContainKeyword(message, msgHistory.skip_location)
             )
 
-            preliminary_selected_locums.add(...[].concat(messages));
+            preliminary_selected_locums = preliminary_selected_locums.concat(messages);
             messages.length > 0 && (offsetId = messages[0].id);
 
             if (messages.length > 0) {
@@ -62,15 +63,22 @@ const chatHistory = async (channels) => {
                 await db.updateLastMsgId(channels)
             }
             history = null;
+
         } while (messages.length === limit && preliminary_selected_locums.length < max)
 
-        //const showNew = preliminary_selected_locums.filter(({ id }) =>
-        //    id > lastIdofMsgs)
-        //const noRepeats = uniqueArray(showNew, 'id')
+        let combineChannelName = {
+            name,
+            chats:
+                messages.filter(({ id }) => {
+                    return id > lastIdofMsgs
+                })
+
+        }
+        showNew.push(combineChannelName)
     }
 
     /**
-     * TODO
+     * TODOl;
      * Categories to filter out from selection
      * 1. If locum replied with taken
      * 2. If distance too far (google map api)
@@ -82,13 +90,12 @@ const chatHistory = async (channels) => {
      * 1. To categorized in different json object
      * */
 
-    const no_repeats = uniqByKeepFirst(preliminary_selected_locums, it => it.message);
+    const no_repeats = uniqByKeepFirst(showNew, it => it.chats);
     const filter_taken = await filter_skipped_keywords(no_repeats);
-    const filter_distance = await filter_locum_distance(filter_taken)
+    const filter_distance_locums = await filter_locum_distance(filter_taken)
+    const reformat_locums_msgbody = await reformat_whatsapp_body(filter_distance_locums)
 
-
-
-    if (usersMsg.length > 0) {
+    if (filter_distance_locums.length > 0) {
         const done = await sendToServer(usersMsg)
         printMessages(usersMsg)
         console.log("saved to server: ", done)
@@ -108,33 +115,45 @@ const chatHistory = async (channels) => {
  * 1st step : plucking certain object of interest only as our array
  * 2nd step : filter out not fit locums
  */
-const filter_skipped_keywords = async (preliminary_selected_locums) => {
-    let filter_taken_arr = [];
-    const { skipped_keywords, skip_location } = msgHistory
+const filter_skipped_keywords = async (msgs) => {
+    let replies_msg = [],
+        filter_taken_arr = []
+    const { skip_keywords } = msgHistory
 
-    for (const { message, replies, replyTo, id, date, peerId, ...rest } of preliminary_selected_locums) {
-        let received_replies_num = replies?.replies;
-        let { channelId } = peerId
+    for (const { chats, name } of msgs) {
+        for (const { message, replies, replyTo, id, date, peerId, ...rest } of chats) {
+            let received_replies_num = replies?.replies;
+            let { channelId } = peerId
 
-        /**
-         * Check if reply to the message contains word taken or any other keyword, then skip the locum
-         */
-        if (received_replies_num > 0) {
-            let { messages: received_replies_msgs, users } = await client.invoke(
-                new Api.messages.GetReplies({
-                    peer: channelId,
-                    msgId: id
-                })
-            );
-            await new Promise(resolve => setTimeout(resolve, 500));
-            for (const { message: reply_msg, date } of received_replies_msgs) {
-                if (checkIfContainKeyword(reply_msg, skipped_keywords)) continue;
-                else
-                    filter_taken_arr.push({ parent_msg: message, received_replies_num, reply_msg, replies, replyTo, id })
-            }
+            /**
+             * Check if reply to the message contains word taken or any other keyword, then skip the locum
+             */
+            if (received_replies_num > 0) {
+                let { messages: received_replies_msgs, users } = await client.invoke(
+                    new Api.messages.GetReplies({
+                        peer: channelId,
+                        msgId: id
+                    })
+                );
+                await new Promise(resolve => setTimeout(resolve, 500));
 
-        } else
-            filter_taken_arr.push({ parent_msg: message, replies, replyTo, id });
+                /**
+                 * if contain reply msg of "taken" we skip the locum
+                 */
+                for (const { message: reply_msg, date } of received_replies_msgs) {
+                    if (checkIfContainKeyword(reply_msg, skip_keywords)) continue;
+                    else
+                        replies_msg.push({ parent_msg: message, received_replies_num, reply_msg, replies, replyTo, id })
+                }
+
+                /**
+                 * If no replies most probably still vacant locum
+                 */
+            } else
+                replies_msg.push({ parent_msg: message, replies, replyTo, id });
+
+        }
+        filter_taken_arr.push({ name, chats: replies_msg })
 
     }
     return filter_taken_arr;
@@ -144,35 +163,90 @@ const filter_skipped_keywords = async (preliminary_selected_locums) => {
  * use google map to estimate distance and duration from locum place
  * @param {any} preliminary_selected_locums
  */
-const filter_locum_distance = async (preliminary_selected_locums) => {
-    let accepted_locum = []
+const filter_locum_distance = async (msgs) => {
+    let accepted_locum_body = [],
+        accepted_locums = []
+    const { tolerable_duration_min, tolerable_lowest_rate } = msgHistory;
 
-    for (const { full_msg } of preliminary_selected_locums) {
-        let msg_body_lines = full_msg.split('\n').filter((m) => m.trim() !== '')
-        for (const msg_line of msg_body_lines) {
-            let clinic_name = msg_line.match(/klinik(.*)/gi)
-            if (clinic_name) {
-                let gmap_place = await gmap.getPlace(clinic_name[0])
-                let { distance, duration } = await gmap.getDistance(gmap_place)
+    for (const { chats, name } of msgs) {
+        for (const { parent_msg } of chats) {
+            let msg_body_lines = parent_msg.split('\n').filter((m) => m.trim() !== '')
+            for (const msg_line of msg_body_lines) {
+                /**
+                 * Matches 'Klinik some', 'Poliklinik some','Sai poliklinik, 56000',
+                 */
+                let clinic_name = msg_line.match(/\b(\w* ?\w*?[ck]lini[ck][^,]*)/i)
+                /**
+                 * Extract rate from msg_line
+                 */
+                let locum_rate = msg_line.match(/(?<=^|\D)(?:RM\s?)?\d+(?:\.\d{1,2})?(?=(\s*\/(hour|hr|hrly|hourly|h))|(\s*\/\s*hr)|(\s*\/\s*hour)|\s+per\s+(hour|hr|h))/i)
 
                 /**
-                 * If the trip needed is more than an hour, reject the locum
+                 * Extract whatsapp link from msg_line
                  */
-                if (parseInt(duration) < 60) {
-                    accepted_locum.push(full_msg)
+                let whatsapp_link = msg_line.match(/https?:\/\/(?:www\.)?wa\.me\/([A-Za-z0-9]+)/i)
+
+                if (clinic_name && !locum_rate) {
+                    if (/chill|whatsapp/i.test(clinic_name[0])) continue;
+                    let gmap_place = await gmap.getPlace(clinic_name[0])
+                    if (!gmap_place) continue;
+
+                    let gmap_distance = await gmap.getDistance(gmap_place)
+                    if (gmap_distance == 'state_too_far' || gmap_distance == null) continue;
+                    else {
+                        const { distance, duration } = gmap_distance
+
+                        /**
+                         * If the trip needed is more than an hour, reject the locum
+                         */
+                        const added_distance_duration = {
+                            ...parent_msg,
+                            distance,
+                            duration
+                        }
+
+                        /**
+                         * If duration is less than an hour, check for locum rate
+                         */
+                        if (parseInt(duration) < tolerable_duration_min) {
+                            accepted_locum_body.push(added_distance_duration)
+                        }
+                        continue;
+                    }
+                } else if (locum_rate) {
+
+
                 }
-                continue;
+            }
+        }
+        let combine_channel_name = {
+            name,
+            ...accepted_locum_body
+        }
+        accepted_locums.push(combine_channel_name)
+    }
+    return accepted_locums
+
+}
+
+/**
+ * reformat message body to have whatsapp link
+ */
+const reformat_whatsapp_links = (msgs) => {
+    for (const { chats, name } of msgs) {
+        for (const { parent_msg } of chats) {
+            let msg_body_lines = parent_msg.split('\n').filter((m) => m.trim() !== '')
+            for (const msg_line of msg_body_lines) {
+
+
             }
         }
     }
-
-    if (accepted_locum.length > 30)
-        return accepted_locum
 }
 
-const checkIfContainKeyword = (strings, skipped_keywords) => {
+const checkIfContainKeyword = (strings, keywords) => {
     let trimmed_lower_strings = strings.trim().toLowerCase();
-    return skipped_keywords.some((substr) => trimmed_lower_strings.includes(substr))
+    return keywords.some((substr) => trimmed_lower_strings.includes(substr))
 }
 
 const printMessages = (messages) => {
@@ -188,7 +262,6 @@ const uniqByKeepFirst = (a, key) => {
             return false
         else
             return seen.add(k)
-        //    return seen.has(k) ? false : seen.add(k);
     });
 }
 

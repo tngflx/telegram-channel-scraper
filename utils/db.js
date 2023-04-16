@@ -36,27 +36,17 @@ async function updateLastMsgId(original_data) {
     }
 }
 
-async function getLastMsgId(channelName) {
+async function getLastMsgId(index) {
     try {
         const readFile = await readDb(CHANNELDB);
         const file = JSON.parse(readFile)
-        return findDataWithValue(file, channelName)
+        return file[index]['lastMsgId']
+        console.log(res)
     } catch (err) {
         console.log("file not found so making a empty one and adding default value ")
         await updateLastMsgId(1);
         return 1;
     }
-}
-
-function findDataWithValue(data, searchValue) {
-    return Object.values(data).reduce((acc, val, index) => {
-        if (val === searchValue) {
-            acc = data[index];
-        } else if (typeof val === "object") {
-            acc = acc.concat(findDataWithValue(val, searchValue));
-        }
-        return acc;
-    }, {});
 }
 
 async function getChat() {

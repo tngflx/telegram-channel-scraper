@@ -12,7 +12,9 @@ const config = {
             limit: 300,
             skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady"],
             skip_location: ["JB", "Johor"],
-            wanted_states: ['Selangor', 'Kuala Lumpur']
+            wanted_states: ['Selangor', 'Kuala Lumpur'],
+            tolerable_duration_min: 60,
+            tolerable_lowest_rate: 40
         },
         getChat: {
             limit: 50
