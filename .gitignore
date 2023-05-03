@@ -11,3 +11,4 @@ bin
 *.sln
 /package-lock.json
 /yarn.lock
+/.wwebjs_auth/session
