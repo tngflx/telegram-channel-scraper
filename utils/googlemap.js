@@ -1,6 +1,10 @@
 const { Client } = require("@googlemaps/google-maps-services-js");
-const { gmap, telegram: { msgHistory } } = require('../config')
+const { gmap, telegram: { msgHistory } } = require('../config');
+const { Logger, LogLevel } = require("./logger");
+const { updateFail } = require('./db')
+
 const key = gmap.API_KEY
+const log = new Logger(LogLevel.DEBUG)
 
 class Gmap {
     constructor() {
@@ -13,11 +17,11 @@ class Gmap {
         return this.client.geolocate({ params: { key }, data: { considerIp: true } })
             .then(({ data }) => {
                 const { lat, lng } = data.location;
-                console.log(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
+                log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
                 this.currentLocation = `${lat}, ${lng}`
             })
             .catch((err) => {
-                console.log(err);
+                log.error(err);
             })
     }
 
@@ -51,12 +55,17 @@ class Gmap {
                     duration: duration.text
                 };
             }).catch((error) => {
-                console.log(error.response.data.error_message);
+                log.error(error.response.data.error_message);
                 return null;
             })
 
     }
 
+    /**
+     * Todo : To include address on another msg_line to make it more specific location
+     * @param {any} place
+     * @returns
+     */
     getPlace(place) {
         const params = {
             key,
@@ -67,6 +76,7 @@ class Gmap {
 
         return this.client.findPlaceFromText({ params })
             .then(({ data }) => {
+                console.log(data, place)
                 let { place_id, name, formatted_address, geometry } = data?.candidates[0];
 
                 return {
@@ -75,8 +85,10 @@ class Gmap {
                     formatted_address,
                     location: geometry?.location
                 };
-            }).catch((error) => {
-                console.error(error);
+
+            }).catch(async (error) => {
+                await updateFail(place)
+                log.error(error);
                 return null;
             })
 

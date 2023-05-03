@@ -14,9 +14,11 @@
   "author": "abdhass",
   "license": "ISC",
   "dependencies": {
-    "@googlemaps/google-maps-services-js": "^3.3.27",
+    "@googlemaps/google-maps-services-js": "^3.3.29",
     "dotenv": "^6.2.0",
-    "node-fetch": "^2.6.9",
-    "telegram": "^2.15.10"
+    "express": "^4.18.2",
+    "qrcode-terminal": "^0.12.0",
+    "telegram": "^2.16.4",
+    "whatsapp-web.js": "^1.19.5"
   }
 }

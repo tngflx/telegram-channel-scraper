@@ -8,12 +8,13 @@ const config = {
         storage: process.env.TELEGRAM_FILE,
         devServer: false,
         msgHistory: {
-            maxMsg: 400,
-            limit: 300,
+            maxMsg: 500,
+            limit: 400,
             skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady"],
             skip_location: ["JB", "Johor"],
             wanted_states: ['Selangor', 'Kuala Lumpur'],
-            tolerable_duration_min: 60,
+            tolerable_travel_duration_min: 60,
+            tolerable_work_duration_hours: 5,
             tolerable_lowest_rate: 40
         },
         getChat: {
@@ -23,7 +24,12 @@ const config = {
     gmap: {
         API_KEY: process.env.GOOGLEMAP_API_KEY
     },
+    whatsapp: {
+        session_file: process.env.WHATSAPP_SESSION,
+        SecParty_phone_num: process.env.WHATSAPP_2NDPARTY_PHONE_NUMBER
+    },
     channelinfodb: process.env.CHANNELSINFO_FILE,
+    failedGmapQuerydb: process.env.FAILEDGMAPQUERY_FILE,
     server: process.env.SERVER_URL
 }
 
