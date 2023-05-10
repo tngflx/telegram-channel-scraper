@@ -12,3 +12,4 @@ bin
 /package-lock.json
 /yarn.lock
 /.wwebjs_auth/session
+/session-locumfilter12
