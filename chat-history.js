@@ -7,12 +7,14 @@ const { Api } = require("telegram");
 const { Gmap } = require('./utils/googlemap')
 const gmap = new Gmap()
 
-const { GramClient, expressApp } = require('./utils/init')
-const { WhatsAppClient } = require('./utils/whatsapp')
-const waClient = new WhatsAppClient()
-
-const { moment } = require('./utils/moment')
+const { moment } = require('./utils/moment');
 const Moment = new moment()
+
+let GramClient, waClient
+const callbackGramClient = (_gramClient, _waClient) => {
+    waClient = _waClient
+    GramClient = _gramClient;
+};
 
 /**
  * Get groups in telegram to get channel ID
@@ -116,14 +118,14 @@ const chatHistory = async (channels) => {
             const previousResult = await accum;
             for (const chat of Object.values(chats)) {
                 sleep(200)
-                previousResult.push(await waClient.sendMessage('my_group', JSON.stringify(chat, null, 2)));
+                previousResult.push(await waClient.sendMsg('my_group', JSON.stringify(chat, null, 2)));
             }
             return previousResult;
         }, []);
 
     }
-    expressApp.get('/', (req, res) => res.json(sentToWA))
 
+    return sentToWA
 }
 
 /**
@@ -380,4 +382,5 @@ const formatMessage = ({ message, date, id }) => {
 module.exports = {
     getChannelsID,
     chatHistory,
+    callbackGramClient
 }

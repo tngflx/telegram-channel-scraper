@@ -10,37 +10,17 @@ const rl = rlp.createInterface({
     input: process.stdin,
     output: process.stdout
 });
-const config = require('../config')
+const { telegram: { phone: phone_number } } = require('../config')
 
 const apiId = parseInt(config.telegram.id);
 const apiHash = config.telegram.hash;
 
-const client = new TelegramClient(storeSession, apiId, apiHash,
+const client = new TelegramClient(
+    storeSession,
+    apiId,
+    apiHash,
     { connectionRetries: 5 });
-exports.GramClient = client
-
-// For render deployment nodejs
-const express = require("express");
-const { makeSessionFilesWritable } = require('./db');
-const app = express();
-exports.expressApp = app;
-const port = process.env.PORT || 3030;
-
-app.use(function (req, res, next) {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-    next();
-});
-
-app.listen(port, () => log.info('API running on port ' + port))
-
-function askFor(q) {
-    return new Promise(resolve => {
-        rl.question(`Please enter ${q} for ` + config.telegram.phone + ':\n', (password) => {
-            resolve(password)
-        })
-    });
-}
+//exports.GramClient = client
 
 // First you will receive a code via SMS or Telegram, which you have to enter
 // directly in the command line. If you entered the correct code, you will be
