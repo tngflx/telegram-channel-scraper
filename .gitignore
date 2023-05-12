@@ -13,3 +13,4 @@ bin
 /yarn.lock
 /.wwebjs_auth/session
 /session-locumfilter12
+/utils/init.js

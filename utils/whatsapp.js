@@ -23,7 +23,8 @@ class WhatsAppClient extends Client {
         this.phoneNum = null
         this.myPhoneNum = null;
         this.groupID = null;
-        this.checkIfQRneed = callbackPromise()
+        this.authStatus = callbackPromise();
+        this.qrImage = callbackPromise()
 
         this.attachListeners()
     }
@@ -34,41 +35,44 @@ class WhatsAppClient extends Client {
         return _serialized;
     }
 
-    async qrStatus() {
-        const qrDataURL = await this.checkIfQRneed.promise
-        switch (true) {
-            case /\w+/g.test(qrDataURL):
-                return qrDataURL
-            default:
-                return `<img src="${qrDataURL}" alt="QR Code"/>`
-        }
+    async checkAuthStatus(str) {
+        return await this.authStatus.promise
+
+    }
+
+    async getQrImage() {
+        const qrDataURL = await this.qrImage.promise
+        return `<img src="${qrDataURL}" alt="QR Code"/>`
+
     }
 
     async attachListeners() {
         let outerThis = this;
         this.on(Events.QR_RECEIVED, (qr) => {
+            outerThis.authStatus.resolve(false)
             qrcode.toDataURL(qr, (err, url) => {
                 if (err) {
                     log.error('Error generating QR code:', err);
-                    outerThis.checkIfQRneed.reject(err)
+                    outerThis.qrImage.reject(err)
                 } else {
-                    outerThis.checkIfQRneed.resolve(url)
+                    outerThis.qrImage.resolve(url)
                 }
             });
         });
 
         // WhatsApp authenticated
         this.on(Events.AUTHENTICATED, (msg) => {
+            this.authStatus.resolve(true)
         });
 
         // WhatsApp authentication failure
         this.on(Events.AUTHENTICATION_FAILURE, () => {
+            outerThis.authStatus.resolve(false)
             log.error('not authenticated');
         });
 
         // WhatsApp ready
         this.on(Events.READY, async (ready) => {
-            outerThis.checkIfQRneed.resolve('ready')
             log.success('whatsapp ready');
             this.myPhoneNum = await outerThis.getPhoneNumId(phone)
             this.otherPhoneNum = await outerThis.getPhoneNumId(SecParty_phone_num)
@@ -87,7 +91,7 @@ class WhatsAppClient extends Client {
 
 
             }).catch(err => {
-                outerThis.checkIfQRneed.resolve('error')
+                outerThis.authStatus.resolve(false)
                 log.error(err)
             })
 

@@ -12,7 +12,7 @@ const config = require('./config');
 const { Logger, LogLevel } = require('./utils/logger');
 const { WhatsAppClient } = require('./utils/whatsapp');
 const { callbackPromise } = require('./utils/helper');
-const waclient = new WhatsAppClient()
+const WAclient = new WhatsAppClient()
 
 const app = express();
 
@@ -39,57 +39,99 @@ app.use(function (req, res, next) {
 const doneGramLoginCallback = callbackPromise();
 const codeCallback = callbackPromise();
 
+// First you will receive a code via SMS or Telegram, which you have to enter
+// directly in the command line. If you entered the correct code, you will be
+// logged in and the credentials are saved.
+
 (async () => {
     const port = process.env.PORT != '' ? 3000 : process.env.PORT
     app.listen(port, () => log.info('API running on port ' + port))
+    let [WAclientStatus, gramclientStatus] = await Promise.all([
+        WAclient.checkAuthStatus(),
+        (async () => {
+            await gramClient.connect(); return gramClient.isUserAuthorized()
+        })()
+    ])
 
-    let waclientStatus = await waclient.qrStatus()
-    await gramClient.connect()
-    let gramclientStatus = await gramClient.isUserAuthorized()
+    // To reset back authstatus after its current state, cause promise only resolve once and permanent
+    WAclient.authStatus = callbackPromise();
 
-    if (waclientStatus == 'ready' && gramclientStatus) {
-        log.success('Telegram : User logged in')
-        start()
-    } else {
-        app.get("/", async (req, res) => {
-            // add qr code if there is
-            if (waclientStatus !== 'ready')
-                CODE_FORM += waclientStatus
-            res.send(BASE_TEMPLATE.replace("{{0}}", CODE_FORM));
-
-            await gramClient.start({
-                phoneNumber: config.telegram.phone,
-                phoneCode: async () => codeCallback.promise,
-                password: '',
-                onError: (err) => {
-                    doneGramLoginCallback.resolve(false)
-                    log.error(err)
-                }
-            });
-
-            doneGramLoginCallback.resolve(true)
-            await gramClient.connect()
+    switch (true) {
+        case WAclientStatus && gramclientStatus:
+            log.success('Telegram : User logged in')
             start()
-        })
+            break;
+
+        case WAclientStatus && !gramclientStatus:
+            app.get("/", async (req, res) => {
+                // add qr code if there is
+                res.send(BASE_TEMPLATE.replace("{{0}}", CODE_FORM));
+
+                await gramClient.start({
+                    phoneNumber: config.telegram.phone,
+                    phoneCode: async () => codeCallback.promise,
+                    password: '',
+                    onError: (err) => {
+                        doneGramLoginCallback.resolve(false)
+                        log.error(err)
+                    }
+                });
+
+                await gramClient.connect()
+                res.redirect('/success')
+                start()
+            })
+            break;
+
+        case !WAclientStatus && gramclientStatus:
+            app.get("/", async (req, res) => {
+                res.send(BASE_TEMPLATE.replace("{{0}}", await WAclient.getQrImage()));
+
+                WAclientStatus = await WAclient.checkAuthStatus()
+                if (WAclientStatus) res.redirect('/success')
+
+            })
+
+            break;
+
+        default:
+            app.get("/", async (req, res) => {
+                // add qr code if there is
+                CODE_FORM += await WAclient.getQrImage()
+                res.send(BASE_TEMPLATE.replace("{{0}}", CODE_FORM));
+
+                await gramClient.start({
+                    phoneNumber: config.telegram.phone,
+                    phoneCode: async () => codeCallback.promise,
+                    password: '',
+                    onError: (err) => {
+                        doneGramLoginCallback.resolve(false)
+                        log.error(err)
+                    }
+                });
+
+                await gramClient.connect()
+                res.redirect('/success')
+                start()
+            })
+            break;
     }
 
 })()
 
+app.get('/success', (req, res) => {
+    return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>LOGGED IN SUCCESS</h1>`));
+})
 
-app.post("/", async (req, res) => {
+app.get('/fail', (req, res) => {
+    return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>LOGGED IN FAILED</h1>`));
+})
+
+app.post("/", (req, res) => {
     //To access POST variable use req.body()methods.
     if ("code" in req.body) {
         const { code } = req.body;
         codeCallback.resolve(code)
-        let waclientStatus = await waclient.qrStatus()
-
-        start()
-
-        if (waclientStatus == 'ready' && await doneGramLoginCallback.promise) {
-            return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>LOGGED IN SUCCESS</h1>`));
-        } else
-            return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>FAILED LOGGED IN</h1>`));
-
     };
 })
 
