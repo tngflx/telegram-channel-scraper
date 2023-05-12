@@ -24,7 +24,7 @@ const log = new Logger(LogLevel.DEBUG)
 const apiId = parseInt(config.telegram.id);
 const apiHash = config.telegram.hash;
 
-const client = new TelegramClient(
+const gramClient = new TelegramClient(
     storeSession,
     apiId,
     apiHash,
@@ -36,44 +36,62 @@ app.use(function (req, res, next) {
     next();
 });
 
-app.listen(3000, () => log.info('API running on port ' + 3000))
+const doneGramLoginCallback = callbackPromise();
+const codeCallback = callbackPromise();
 
-app.get("/", async (req, res) => {
-    if (await client.isUserAuthorized()) {
+(async () => {
+    const port = process.env.PORT != '' ? 3000 : process.env.PORT
+    app.listen(port, () => log.info('API running on port ' + port))
+
+    let waclientStatus = await waclient.qrStatus()
+    await gramClient.connect()
+    let gramclientStatus = await gramClient.isUserAuthorized()
+
+    if (waclientStatus == 'ready' && gramclientStatus) {
         log.success('Telegram : User logged in')
-    } else {
-        let qr = await waclient.qrcodeListener()
-        CODE_FORM += qr
-        res.send(BASE_TEMPLATE.replace("{{0}}", CODE_FORM));
-
-        await client.start({
-            phoneNumber: config.telegram.phone,
-            phoneCode: async () => codeCallback.promise,
-            password: async () => passwordCallback.promise,
-            onError: (err) => log.error(err),
-        });
-        await client.connect()
-
         start()
+    } else {
+        app.get("/", async (req, res) => {
+            // add qr code if there is
+            if (waclientStatus !== 'ready')
+                CODE_FORM += waclientStatus
+            res.send(BASE_TEMPLATE.replace("{{0}}", CODE_FORM));
 
+            await gramClient.start({
+                phoneNumber: config.telegram.phone,
+                phoneCode: async () => codeCallback.promise,
+                password: '',
+                onError: (err) => {
+                    doneGramLoginCallback.resolve(false)
+                    log.error(err)
+                }
+            });
+
+            doneGramLoginCallback.resolve(true)
+            await gramClient.connect()
+            start()
+        })
     }
-});
+
+})()
+
 
 app.post("/", async (req, res) => {
     //To access POST variable use req.body()methods.
     if ("code" in req.body) {
-        codeCallback.resolve(req.body.code);
-        return res.send(BASE_TEMPLATE.replace("{{0}}", PASSWORD_FORM));
-    }
-    if ("password" in req.body) {
-        passwordCallback.resolve(req.body.code);
-        res.redirect("/");
-    }
-    console.log(req.body);
-});
+        const { code } = req.body;
+        codeCallback.resolve(code)
+        let waclientStatus = await waclient.qrStatus()
 
-const codeCallback = callbackPromise();
-const passwordCallback = callbackPromise();
+        start()
+
+        if (waclientStatus == 'ready' && await doneGramLoginCallback.promise) {
+            return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>LOGGED IN SUCCESS</h1>`));
+        } else
+            return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>FAILED LOGGED IN</h1>`));
+
+    };
+})
 
 const run = async (chat) => {
     await db.makeSessionFilesWritable()
@@ -81,7 +99,7 @@ const run = async (chat) => {
 }
 
 const start = async () => {
-    callbackGramClient(client)
+    callbackGramClient(gramClient)
     let chat = await db.getChat();
 
     if (!chat) {

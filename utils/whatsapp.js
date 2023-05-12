@@ -34,20 +34,25 @@ class WhatsAppClient extends Client {
         return _serialized;
     }
 
-    async qrcodeListener() {
+    async qrStatus() {
         const qrDataURL = await this.checkIfQRneed.promise
-        return `<img src="${qrDataURL}" alt="QR Code"/>`
+        switch (true) {
+            case /\w+/g.test(qrDataURL):
+                return qrDataURL
+            default:
+                return `<img src="${qrDataURL}" alt="QR Code"/>`
+        }
     }
 
     async attachListeners() {
-        let client = this;
+        let outerThis = this;
         this.on(Events.QR_RECEIVED, (qr) => {
             qrcode.toDataURL(qr, (err, url) => {
                 if (err) {
                     log.error('Error generating QR code:', err);
-                    client.checkIfQRneed.reject(err)
+                    outerThis.checkIfQRneed.reject(err)
                 } else {
-                    client.checkIfQRneed.resolve(url)
+                    outerThis.checkIfQRneed.resolve(url)
                 }
             });
         });
@@ -63,10 +68,10 @@ class WhatsAppClient extends Client {
 
         // WhatsApp ready
         this.on(Events.READY, async (ready) => {
-            client.checkIfQRneed.resolve('whatsapp ready')
+            outerThis.checkIfQRneed.resolve('ready')
             log.success('whatsapp ready');
-            this.myPhoneNum = await this.getPhoneNumId(phone)
-            this.otherPhoneNum = await this.getPhoneNumId(SecParty_phone_num)
+            this.myPhoneNum = await outerThis.getPhoneNumId(phone)
+            this.otherPhoneNum = await outerThis.getPhoneNumId(SecParty_phone_num)
 
             return super.getChats().then((chats) => {
                 const myGroup = chats.find((chat) => chat.name === this.myGroupName);
@@ -81,7 +86,10 @@ class WhatsAppClient extends Client {
                 }
 
 
-            }).catch(err => log.error(err))
+            }).catch(err => {
+                outerThis.checkIfQRneed.resolve('error')
+                log.error(err)
+            })
 
         });
 

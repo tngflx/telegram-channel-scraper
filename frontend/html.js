@@ -2,8 +2,15 @@ const BASE_TEMPLATE = `
 <!DOCTYPE html>
 <html>
     <head>
-        <meta charset='UTF-8'>
-        <title>GramJS + Express</title>
+      <style>
+        body {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+        }
+      </style>
     </head>
     <body>{{0}}</body>
 </html>
@@ -29,6 +36,33 @@ const PASSWORD_FORM = `
     <input type='submit'>
 </form>
 `;
+
+const LOADING_SCREEN = `
+<div class="loader abs-center">
+  <div class="sq-wrapper">
+    <div class="sq-box">
+      <div class="sq-fill"></div>
+    </div>
+    <div class="sq-box">
+      <div class="sq-fill"></div>
+    </div>
+    <div class="sq-box">
+      <div class="sq-fill"></div>
+    </div>
+    <div class="sq-box">
+      <div class="sq-fill"></div>
+    </div>
+    <div class="sq-box">
+      <div class="sq-fill"></div>
+    </div>
+    <div class="sq-box">
+      <div class="sq-fill"></div>
+    </div>
+  </div>
+</div>
+`
+
+
 
 module.exports = {
     BASE_TEMPLATE, CODE_FORM, PHONE_FORM, PASSWORD_FORM
