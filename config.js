@@ -8,8 +8,8 @@ const config = {
         storage: process.env.TELEGRAM_FILE,
         devServer: false,
         msgHistory: {
-            maxMsg: 500,
-            limit: 400,
+            maxNumFiltrMsgsPerChannel: 200,
+            maxNumUnfiltrMsgsPerChannel: 400,
             skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady"],
             skip_location: ["JB", "Johor"],
             wanted_states: ['Selangor', 'Kuala Lumpur'],

@@ -1,4 +1,4 @@
-const { getChannelsID, chatHistory, callbackGramClient } = require('./chat-history')
+const { getChannelsID, chatHistory, callbackBothClients } = require('./chat-history')
 const db = require('./utils/db');
 const { TelegramClient } = require('telegram')
 const { StoreSession } = require('telegram/sessions');
@@ -36,8 +36,9 @@ app.use(function (req, res, next) {
     next();
 });
 
-const doneGramLoginCallback = callbackPromise();
+const gramLoggedIn = callbackPromise();
 const codeCallback = callbackPromise();
+let sentWAMsgs = [];
 
 // First you will receive a code via SMS or Telegram, which you have to enter
 // directly in the command line. If you entered the correct code, you will be
@@ -53,8 +54,7 @@ const codeCallback = callbackPromise();
         })()
     ])
 
-    // To reset back authstatus after its current state, cause promise only resolve once and permanent
-    WAclient.authStatus = callbackPromise();
+    log.info(`WAclientStatus :${WAclientStatus}, GramclientStatus : ${gramclientStatus}`)
 
     switch (true) {
         case WAclientStatus && gramclientStatus:
@@ -72,29 +72,36 @@ const codeCallback = callbackPromise();
                     phoneCode: async () => codeCallback.promise,
                     password: '',
                     onError: (err) => {
-                        doneGramLoginCallback.resolve(false)
-                        log.error(err)
+                        throw (err)
                     }
                 });
 
                 await gramClient.connect()
-                res.redirect('/success')
+                gramLoggedIn.resolve(true)
                 start()
             })
             break;
 
         case !WAclientStatus && gramclientStatus:
+            // To reset back authstatus after its current state, cause promise only resolve once and non changeable
+            WAclient.authStatus = callbackPromise();
+
             app.get("/", async (req, res) => {
                 res.send(BASE_TEMPLATE.replace("{{0}}", await WAclient.getQrImage()));
 
                 WAclientStatus = await WAclient.checkAuthStatus()
-                if (WAclientStatus) res.redirect('/success')
+                if (WAclientStatus)
+                    start()
+                //if (WAclientStatus) res.redirect('/success')
 
             })
 
             break;
 
         default:
+            // To reset back authstatus after its current state, cause promise only resolve once and non changeable
+            WAclient.authStatus = callbackPromise();
+
             app.get("/", async (req, res) => {
                 // add qr code if there is
                 CODE_FORM += await WAclient.getQrImage()
@@ -105,18 +112,16 @@ const codeCallback = callbackPromise();
                     phoneCode: async () => codeCallback.promise,
                     password: '',
                     onError: (err) => {
-                        doneGramLoginCallback.resolve(false)
                         log.error(err)
                     }
                 });
 
                 await gramClient.connect()
-                res.redirect('/success')
+                gramLoggedIn.resolve(true)
                 start()
             })
             break;
     }
-
 })()
 
 app.get('/success', (req, res) => {
@@ -127,30 +132,36 @@ app.get('/fail', (req, res) => {
     return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>LOGGED IN FAILED</h1>`));
 })
 
-app.post("/", (req, res) => {
+app.post("/", async (req, res) => {
     //To access POST variable use req.body()methods.
     if ("code" in req.body) {
         const { code } = req.body;
         codeCallback.resolve(code)
+
+        if (await WAclient.checkAuthStatus() && await gramLoggedIn.promise)
+            res.redirect('/success')
+        else {
+            res.redirect('/fail')
+        }
     };
 })
 
-const run = async (chat) => {
+const run = async (channels) => {
     await db.makeSessionFilesWritable()
-    await chatHistory(chat)
+    sentWAMsgs = await chatHistory(channels)
 }
 
 const start = async () => {
-    callbackGramClient(gramClient)
-    let chat = await db.getChat();
+    callbackBothClients(gramClient, WAclient)
+    let channels = await db.getChat();
 
-    if (!chat) {
-        chat = await getChannelsID();
-        await db.updateChat(chat)
+    if (!channels) {
+        channels = await getChannelsID();
+        await db.updateChat(channels)
     }
 
     let timerId = setTimeout(function tick() {
-        run(chat);
+        run(channels);
         timerId = setTimeout(tick, 60000);
     }, 2000);
 }

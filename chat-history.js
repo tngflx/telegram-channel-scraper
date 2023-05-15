@@ -8,11 +8,12 @@ const { Gmap } = require('./utils/googlemap')
 const gmap = new Gmap()
 
 const { moment } = require('./utils/moment');
+const { checkIfContainKeyword } = require('./utils/helper');
 const Moment = new moment()
 
-let GramClient, waClient
-const callbackGramClient = (_gramClient, _waClient) => {
-    waClient = _waClient
+let GramClient, WAclient
+const callbackBothClients = (_gramClient, _WAclient) => {
+    WAclient = _WAclient
     GramClient = _gramClient;
 };
 
@@ -23,7 +24,7 @@ const callbackGramClient = (_gramClient, _waClient) => {
 const getChannelsID = async () => {
 
     const dialogs = await GramClient.getDialogs({
-        limit: 20
+        limit: 50
     });
 
     return dialogs.reduce((accum, { name, id }, idx) => {
@@ -36,23 +37,25 @@ const getChannelsID = async () => {
 
 const chatHistory = async (channels) => {
 
-    const { maxMsg, limit } = msgHistory
+    const { maxNumFiltrMsgsPerChannel, maxNumUnfiltrMsgsPerChannel, skip_keywords, skip_location } = msgHistory
 
-    const max = maxMsg
-    let offsetId = 0
-    let preliminary_selected_locums = [],
-        current_messages,
-        showNew = [],
+    let showNew = [],
         lastIdofMsgs;
+
+    const combineSkipKeywords = [].concat(...skip_keywords, ...skip_location)
 
     for (const [channel_index, { id: channelId, name }] of channels.entries()) {
         lastIdofMsgs = await db.getLastMsgId(channel_index);
+        let offsetId = 0
+        let current_messages = []
+        let locum_only_messages = []
 
         do {
+            await sleep(300)
             let history = await GramClient.getMessages(channelId, {
-                max_id: -offsetId,
-                offset: -(preliminary_selected_locums.length),
-                limit
+                maxId: -offsetId,
+                addOffset: -(locum_only_messages.length),
+                limit: maxNumUnfiltrMsgsPerChannel
             });
 
             /**
@@ -61,21 +64,26 @@ const chatHistory = async (channels) => {
              */
             current_messages = history.filter(filterLastDay).filter(({ isReply, className, message }) =>
                 className === 'Message'
-                && !isReply && checkIfContainKeyword(message, ['locum'])
-                && !checkIfContainKeyword(message, msgHistory.skip_keywords)
-                && !checkIfContainKeyword(message, msgHistory.skip_location)
+                && checkIfContainKeyword(message, ['locum', 'slot'])
+                && !isReply && !checkIfContainKeyword(message, combineSkipKeywords)
             )
 
-            preliminary_selected_locums = preliminary_selected_locums.concat(current_messages);
-            current_messages.length > 0 && (offsetId = current_messages[0].id);
+            locum_only_messages = locum_only_messages.concat(current_messages);
 
             if (current_messages.length > 0) {
+                // For pagination purpose
+                offsetId = current_messages[0].id
+
+                // saving lastmsgID in DB
                 channels[channel_index]['lastMsgId'] = current_messages[0].id
-                let result = await db.updateLastMsgId(channels)
+                await db.updateLastMsgId(channels)
                 log.info(`channelName: ${name} lastMsgId: ${lastIdofMsgs}`)
+            } else {
+                log.error('no current_messages passed filter, something wrong with filter')
             }
 
-        } while (current_messages.length === limit && preliminary_selected_locums.length < max)
+
+        } while (current_messages.length === maxNumUnfiltrMsgsPerChannel && locum_only_messages.length < maxNumFiltrMsgsPerChannel)
 
         let combineChannelName = {
             name,
@@ -117,8 +125,8 @@ const chatHistory = async (channels) => {
         sentToWA = await reformatWA_filterDistance_locums.reduce(async (accum, { name, ...chats }) => {
             const previousResult = await accum;
             for (const chat of Object.values(chats)) {
-                sleep(200)
-                previousResult.push(await waClient.sendMsg('my_group', JSON.stringify(chat, null, 2)));
+                sleep(300)
+                previousResult.push(await WAclient.sendMsg('my_group', JSON.stringify(chat, null, 2)));
             }
             return previousResult;
         }, []);
@@ -182,7 +190,7 @@ const filter_skipped_keywords = async (msgs) => {
 
 /**
  * use google map to estimate distance and duration from locum place
- * @param {any} preliminary_selected_locums
+ * @param {any} locum_only_messages
  */
 const filter_locum_distance = async (msgs) => {
     let accepted_locums = []
@@ -295,11 +303,16 @@ const filter_locum_distance = async (msgs) => {
 const reformatClinicName = (msg_line, msg_body_lines) => {
     let [clinic_name] = msg_line.match(/\b(\w* ?\w*?[ck]lini[ck][^,]*)/i) || [null]
 
-    //remove all emojis, non unicode, date? if possible
-    let emojiRegex = /[^a-zA-Z0-9\s\p{Emoji}]/gu
+    // remove all non string character in clinic_name
+    let nonStringCharReg = /[^\w\s]|_$/g
+    clinic_name = clinic_name?.replace(nonStringCharReg, '');
+
+    let ddmmyyRegex = /\w+?\s\d{1,2}\/\d{1,2}\/\d{1,4}/i
 
     let [hospital_name] = msg_line.match(/.*\bhospital\b.*/i) || [null]
+    hospital_name = hospital_name?.replace(nonStringCharReg, '');
 
+    // If there is address found, use that as clinic name instead
     let malaysian_address = /(Lot|No|\d+).*(Jalan|Jln|Lorong|Lrg|Lebuhraya|Lebuh|Persiaran|Psn|Kampung|Kg|Menara).*,.*/gi
 
     let true_address = msg_body_lines.reduce((accum, msg, idx) => {
@@ -313,32 +326,23 @@ const reformatClinicName = (msg_line, msg_body_lines) => {
             return clinic_name.replace('FOR ', '').replace(' 2023', '')
             break;
         //Contains DD/MM/YY or DD-MM-YY format
-        case /\w+?\s\d{1,2}\/\d{1,2}\/\d{1,4}/i.test(clinic_name):
-            let replace_name = clinic_name.replace(regex, '')
+        case ddmmyyRegex.test(clinic_name):
+            let replace_name = clinic_name.replace(ddmmyyRegex, '')
             return replace_name
             break;
         //Contains true address
         case true_address:
             return true_address
             break;
-        //Contains comma end of string
-        case clinic_name?.endsWith(','):
-            return clinic_name.slice(0, -1)
-            break;
-        //Contains emojis non unicode, date?
-        case emojiRegex.test(clinic_name):
-            return clinic_name?.replace(emojiRegex, '')
+        //Contains non-string character at end of name
+        case nonStringCharReg.test(clinic_name):
+            return clinic_name.replace(nonStringCharReg, '')
             break;
         default:
             return clinic_name ? clinic_name : hospital_name;
     }
 
 
-}
-
-const checkIfContainKeyword = (strings, keywords) => {
-    let trimmed_lower_strings = strings.trim().toLowerCase();
-    return keywords.some((substr) => trimmed_lower_strings.includes(substr))
 }
 
 const printMessages = (messages) => {
@@ -382,5 +386,5 @@ const formatMessage = ({ message, date, id }) => {
 module.exports = {
     getChannelsID,
     chatHistory,
-    callbackGramClient
+    callbackBothClients
 }

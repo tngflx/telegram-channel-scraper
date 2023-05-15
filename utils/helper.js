@@ -10,6 +10,12 @@ function callbackPromise() {
     return { promise, resolve, reject };
 }
 
+const checkIfContainKeyword = (strings, keywords) => {
+    let trimmed_lower_strings = strings.trim().toLowerCase();
+    return keywords.some((substr) => trimmed_lower_strings.includes(substr))
+}
+
 module.exports = {
-    callbackPromise
+    callbackPromise,
+    checkIfContainKeyword
 }
