@@ -1,9 +1,8 @@
 const { Client } = require("@googlemaps/google-maps-services-js");
-const { gmap, telegram: { msgHistory } } = require('../config');
+const { gmap: { API_KEY, geolocate }, telegram: { msgHistory } } = require('../config');
 const { Logger, LogLevel } = require("./logger");
-const { updateFail } = require('./db')
+const { updateFail } = require('./db');
 
-const key = gmap.API_KEY
 const log = new Logger(LogLevel.DEBUG)
 
 class Gmap {
@@ -14,15 +13,21 @@ class Gmap {
     }
 
     _initialize() {
-        return this.client.geolocate({ params: { key }, data: { considerIp: true } })
-            .then(({ data }) => {
-                const { lat, lng } = data.location;
-                log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
-                this.currentLocation = `${lat}, ${lng}`
-            })
-            .catch((err) => {
-                log.error(err);
-            })
+        if (typeof geolocate == 'boolean' && geolocate) {
+            return this.client.geolocate({ params: { key: API_KEY }, data: { considerIp: true } })
+                .then(({ data }) => {
+                    const { lat, lng } = data.location;
+                    log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
+                    this.currentLocation = `${lat}, ${lng}`
+                })
+                .catch((err) => {
+                    log.error(err);
+                })
+        } else if (Array.isArray(geolocate)) {
+            const [lat, lng] = geolocate
+            log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
+            this.currentLocation = `${lat}, ${lng}`
+        }
     }
 
     async getDistance({ place_id, formatted_address }) {
@@ -55,7 +60,7 @@ class Gmap {
                     duration: duration.text
                 };
             }).catch((error) => {
-                log.error(error.response.data.error_message);
+                log.error(error?.response?.data?.error_message);
                 return null;
             })
 

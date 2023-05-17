@@ -45,7 +45,7 @@ let sentWAMsgs = [];
 // logged in and the credentials are saved.
 
 (async () => {
-    const port = process.env.PORT != '' ? 3000 : process.env.PORT
+    const port = process.env.PORT == '' ? process.env.PORT : 80
     app.listen(port, () => log.info('API running on port ' + port))
     let [WAclientStatus, gramclientStatus] = await Promise.all([
         WAclient.checkAuthStatus(),

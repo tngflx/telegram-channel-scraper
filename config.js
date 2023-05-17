@@ -22,7 +22,8 @@ const config = {
         },
     },
     gmap: {
-        API_KEY: process.env.GOOGLEMAP_API_KEY
+        API_KEY: process.env.GOOGLEMAP_API_KEY,
+        geolocate: true
     },
     whatsapp: {
         session_file: process.env.WHATSAPP_SESSION,
