@@ -11,7 +11,7 @@ const express = require("express");
 var bodyParser = require('body-parser')
 const app = express();
 
-let { handleAssets, FAIL_PAGE, SUCCESS_PAGE, CODE_FORM, QR_IMAGE, ADD_SCRIPT } = require('./frontend/html')
+let { handleAssets, FAIL_PAGE, SUCCESS_PAGE, CODE_FORM, QR_IMAGE } = require('./frontend/html')
 
 const { Logger, LogLevel } = require('./utils/logger');
 
@@ -90,7 +90,6 @@ handleAssets()
 
                 app.get("/", async (req, res) => {
                     let qr = await handleWAlogin()
-                    BASE_TEMPLATE = await ADD_SCRIPT();
                     res.send(BASE_TEMPLATE.replace("{{0}}", qr))
 
                 })

@@ -36,6 +36,12 @@ class WhatsAppClient extends Client {
     }
 
     async checkAuthStatus(cb) {
+        // Remove all previous listeners for the events
+        // Prevent memory leak problem
+        this.removeAllListeners(Events.QR_RECEIVED);
+        this.removeAllListeners(Events.AUTHENTICATED);
+        this.removeAllListeners(Events.AUTHENTICATION_FAILURE);
+
         return new Promise((resolve) => {
             this.on(Events.QR_RECEIVED, (qr) => {
                 qrcode.toDataURL(qr, (err, url) => {
