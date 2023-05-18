@@ -14,3 +14,6 @@ bin
 /.wwebjs_auth/session
 /session-locumfilter12
 /utils/init.js
+/gram_sessions
+/session-whatsapp
+/libman.json
