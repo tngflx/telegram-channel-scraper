@@ -8,9 +8,10 @@ const config = {
         storage: process.env.TELEGRAM_FILE,
         devServer: false,
         msgHistory: {
+            olderByDays: 3,
             maxNumFiltrMsgsPerChannel: 200,
-            maxNumUnfiltrMsgsPerChannel: 400,
-            skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady"],
+            maxNumUnfiltrMsgsPerChannel: 100,
+            skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady", "sonographer"],
             skip_location: ["JB", "Johor"],
             wanted_states: ['Selangor', 'Kuala Lumpur'],
             tolerable_travel_duration_min: 60,
@@ -26,7 +27,6 @@ const config = {
         geolocate: true
     },
     whatsapp: {
-        session_file: process.env.WHATSAPP_SESSION,
         SecParty_phone_num: process.env.WHATSAPP_2NDPARTY_PHONE_NUMBER
     },
     channelinfodb: process.env.CHANNELSINFO_FILE,

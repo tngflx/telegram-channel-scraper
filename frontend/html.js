@@ -1,69 +1,82 @@
-const BASE_TEMPLATE = `
+let BASE_TEMPLATE = `
 <!DOCTYPE html>
 <html>
-    <head>
-      <style>
-        body {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          height: 100vh;
-          margin: 0;
-        }
-      </style>
-    </head>
-    <body>{{0}}</body>
+   <head>
+      <script>{{script}}</script>
+      <style>{{style}}</style>
+   </head>
+   <body>{{0}}</body>
 </html>
-`;
-
-const PHONE_FORM = `
-<form action='/' method='post'>
-    Phone (international format): <input name='phone' type='text' placeholder='+34600000000'>
-    <input type='submit'>
-</form>
-`;
-
-const CODE_FORM = `
-<form action='/' method='post'>
-    Telegram code: <input name='code' type='text' placeholder='70707'>
-    <input type='submit'>
-</form>
-`;
-
-const PASSWORD_FORM = `
-<form action='/' method='post'>
-    Telegram password: <input name='password' type='text' placeholder='your password (leave empty if no password)'>
-    <input type='submit'>
-</form>
-`;
-
-const LOADING_SCREEN = `
-<div class="loader abs-center">
-  <div class="sq-wrapper">
-    <div class="sq-box">
-      <div class="sq-fill"></div>
-    </div>
-    <div class="sq-box">
-      <div class="sq-fill"></div>
-    </div>
-    <div class="sq-box">
-      <div class="sq-fill"></div>
-    </div>
-    <div class="sq-box">
-      <div class="sq-fill"></div>
-    </div>
-    <div class="sq-box">
-      <div class="sq-fill"></div>
-    </div>
-    <div class="sq-box">
-      <div class="sq-fill"></div>
-    </div>
-  </div>
-</div>
 `
-
-
+const db = require('../utils/db')
 
 module.exports = {
-    BASE_TEMPLATE, CODE_FORM, PHONE_FORM, PASSWORD_FORM
+    BASE_TEMPLATE,
+
+    async handleAssets() {
+
+        let css = await db.readDb('./frontend/front.css')
+        BASE_TEMPLATE = BASE_TEMPLATE.replace('{{style}}', css.trim())
+        return BASE_TEMPLATE;
+    },
+
+    async ADD_SCRIPT() {
+        let script = await db.readDb('./frontend/script.js')
+        return BASE_TEMPLATE.replace('{{script}}', script.trim())
+    },
+
+    SUCCESS_PAGE() {
+        return BASE_TEMPLATE.replace("{{0}}", "<h1>LOGGED IN SUCCESSFULLY</h1>");
+    },
+
+    FAIL_PAGE() {
+        return BASE_TEMPLATE.replace("{{0}}", "<h1>LOGGED IN FAILED</h1>");
+    },
+
+    PHONE_FORM: `
+    <form action='/' method='post'>
+        Phone (international format): <input name='phone' type='text' placeholder='+34600000000'>
+        <input type='submit'>
+    </form>
+    `,
+
+    CODE_FORM: `
+    <form action='/' method='post'>
+        Telegram code: <input name='code' type='text' placeholder='70707'>
+        <input type='submit'>
+    </form>
+    `,
+
+    QR_IMAGE: `
+    <div class="qr-container">
+      <h1>Please scan with secondary phone!</h1>
+      <img src="{{qr}}" id="qrcode"/>
+    </div>
+    `,
+
+    LOADING_SCREEN: `
+        <div class="loader abs-center">
+          <div class="sq-wrapper">
+            <div class="sq-box">
+              <div class="sq-fill"></div>
+            </div>
+            <div class="sq-box">
+              <div class="sq-fill"></div>
+            </div>
+            <div class="sq-box">
+              <div class="sq-fill"></div>
+            </div>
+            <div class="sq-box">
+              <div class="sq-fill"></div>
+            </div>
+            <div class="sq-box">
+              <div class="sq-fill"></div>
+            </div>
+            <div class="sq-box">
+              <div class="sq-fill"></div>
+            </div>
+          </div>
+        </div>
+`
 }
+

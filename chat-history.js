@@ -54,7 +54,7 @@ const chatHistory = async (channels) => {
             await sleep(300)
             let history = await GramClient.getMessages(channelId, {
                 maxId: -offsetId,
-                addOffset: -(locum_only_messages.length),
+                addOffset: locum_only_messages.length,
                 limit: maxNumUnfiltrMsgsPerChannel
             });
 
@@ -124,9 +124,13 @@ const chatHistory = async (channels) => {
 
         sentToWA = await reformatWA_filterDistance_locums.reduce(async (accum, { name, ...chats }) => {
             const previousResult = await accum;
-            for (const chat of Object.values(chats)) {
+            for (let { full_msg, ...others } of Object.values(chats)) {
                 sleep(300)
-                previousResult.push(await WAclient.sendMsg('my_group', JSON.stringify(chat, null, 2)));
+                if (Array.isArray(full_msg) && full_msg.length > 0)
+                    full_msg = full_msg.join('\n')
+                others = '\n' + JSON.stringify(others, null, 2)
+                full_msg += others
+                previousResult.push(await WAclient.sendMsg('my_group', full_msg));
             }
             return previousResult;
         }, []);
@@ -164,7 +168,7 @@ const filter_skipped_keywords = async (msgs) => {
                         msgId: id
                     })
                 );
-                await sleep(500);
+                await sleep(600);
 
                 /**
                  * if contain reply msg of "taken" we skip the locum
@@ -373,7 +377,7 @@ function sleep(ms) {
 }
 
 const filterLastDay = ({ date }) => new Date(date * 1e3) > dayRange()
-const dayRange = () => Date.now() - new Date(86400000 * 2)
+const dayRange = () => Date.now() - new Date(86400000 * msgHistory.olderByDays)
 const filterUsersMessages = ({ _ }) => _ === 'message'
 
 const formatMessage = ({ message, date, id }) => {

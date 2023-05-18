@@ -1,3 +1,5 @@
+/* eslint-disable no-case-declarations */
+/* eslint-disable no-unreachable */
 const { Client, LocalAuth, Events } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const { Logger, LogLevel } = require('./logger')
@@ -16,16 +18,14 @@ class WhatsAppClient extends Client {
                 args: ["--no-sandbox"]
             },
             authStrategy: new LocalAuth({
-                clientId: 'locumfilter12',
+                clientId: 'whatsapp',
                 dataPath: './'
             })
         })
         this.phoneNum = null
         this.myPhoneNum = null;
         this.groupID = null;
-        this.authStatus = callbackPromise();
         this.qrImage = callbackPromise()
-
         this.attachListeners()
     }
 
@@ -35,50 +35,58 @@ class WhatsAppClient extends Client {
         return _serialized;
     }
 
-    async checkAuthStatus(str) {
-        return await this.authStatus.promise
+    async checkAuthStatus(cb) {
+        return new Promise((resolve) => {
+            this.on(Events.QR_RECEIVED, (qr) => {
+                qrcode.toDataURL(qr, (err, url) => {
+                    if (err) {
+                        log.error('Error generating QR code:', err);
+                        resolve(true);
+                    } else {
+                        this.qrImage.resolve(url)
+                        if (cb && typeof cb == 'function') {
+                            cb(url)
+                        }
+                        resolve(false);
+                    }
+                });
+            });
 
+            // WhatsApp authenticated
+            this.on(Events.AUTHENTICATED, () => {
+                resolve(true)
+            });
+
+            // WhatsApp authentication failure
+            this.on(Events.AUTHENTICATION_FAILURE, () => {
+                resolve(false)
+                log.error('not authenticated');
+            });
+        })
     }
 
-    async getQrImage() {
-        const qrDataURL = await this.qrImage.promise
-        return `<img src="${qrDataURL}" alt="QR Code"/>`
-
+    // to get first qrimage
+    async getQRImage() {
+        return await this.qrImage.promise
     }
 
     async attachListeners() {
-        let outerThis = this;
-        this.on(Events.QR_RECEIVED, (qr) => {
-            outerThis.authStatus.resolve(false)
-            qrcode.toDataURL(qr, (err, url) => {
-                if (err) {
-                    log.error('Error generating QR code:', err);
-                    outerThis.qrImage.reject(err)
-                } else {
-                    outerThis.qrImage.resolve(url)
-                }
-            });
-        });
-
-        // WhatsApp authenticated
-        this.on(Events.AUTHENTICATED, (msg) => {
-            this.authStatus.resolve(true)
-        });
-
-        // WhatsApp authentication failure
-        this.on(Events.AUTHENTICATION_FAILURE, () => {
-            outerThis.authStatus.resolve(false)
-            log.error('not authenticated');
-        });
 
         // WhatsApp ready
-        this.on(Events.READY, async (ready) => {
+        this.on(Events.READY, async () => {
             log.success('whatsapp ready');
-            this.myPhoneNum = await outerThis.getPhoneNumId(phone)
-            this.otherPhoneNum = await outerThis.getPhoneNumId(SecParty_phone_num)
+            this.myPhoneNum = await this.getPhoneNumId(phone)
+            this.otherPhoneNum = await this.getPhoneNumId(SecParty_phone_num)
 
             return super.getChats().then((chats) => {
                 const myGroup = chats.find((chat) => chat.name === this.myGroupName);
+
+                if (process.env.NODE_ENV == 'dev') {
+                    myGroup.clearMessages().then(status => {
+                        log.info('WA.clearMessages: ' + status)
+                    })
+                }
+
                 if (!myGroup) {
                     return super.createGroup(this.myGroupName, [this.myPhoneNum]).then((createGroup) => {
                         log.success(`group ${this.myGroupName} created!`)
@@ -91,7 +99,7 @@ class WhatsAppClient extends Client {
 
 
             }).catch(err => {
-                outerThis.authStatus.resolve(false)
+                this.authStatus.resolve(false)
                 log.error(err)
             })
 
@@ -117,7 +125,6 @@ class WhatsAppClient extends Client {
             case 'my_group':
                 phoneNum = this.groupID;
                 const groupChat = await super.getChatById(phoneNum);
-                await groupChat.clearMessages();
                 return await groupChat.sendMessage(text);
                 break;
             default:
@@ -126,4 +133,7 @@ class WhatsAppClient extends Client {
         }
     }
 }
-exports.WhatsAppClient = WhatsAppClient
+module.exports = {
+    WhatsAppClient,
+    Events
+}

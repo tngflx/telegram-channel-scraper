@@ -1,4 +1,3 @@
-const config = require('../config');
 const fs = require("fs");
 const path = require("path");
 const { channelinfodb: CHANNEL_DB, failedGmapQuerydb: FAILED_DB } = require('../config');
@@ -40,7 +39,7 @@ async function updateLastMsgId(original_data) {
     try {
         return await writeFile(original_data, CHANNEL_DB)
     } catch (err) {
-        log.error("error, couldnt save to file " + err)
+        log.error('updateLastMsgId : ' + err)
     }
 }
 
@@ -49,16 +48,23 @@ async function getLastMsgId(channelIndex) {
     try {
         const readFile = await readDb(CHANNEL_DB);
         file = JSON.parse(readFile)
+
         // Another check to make sure lastMsgId object exists
         if (file && file?.[channelIndex].hasOwnProperty('lastMsgId'))
             return file[channelIndex]['lastMsgId']
         else
-            throw new Error('json object \lastMsgId\ is not found')
+            throw new Error('json key \lastMsgId\ is not set')
     } catch (err) {
-        log.error(err?.hasOwnProperty('message') ? err.message : err)
-        file[channelIndex]['lastMsgId'] = 1
-        await updateLastMsgId(file);
-        return 1;
+
+        if (!file) {
+            log.error('Can/t parse CHANNEL_DB json data, likely empty')
+            return 1
+        } else {
+            log.error(err?.hasOwnProperty('message') ? err.message : err)
+            file[channelIndex]['lastMsgId'] = 1
+            await updateLastMsgId(file);
+            return 1;
+        }
     }
 }
 
@@ -77,7 +83,7 @@ async function updateChat(obj) {
     try {
         await writeFile(obj, CHANNEL_DB)
     } catch (err) {
-        log.error("error, couldnt save chat to file " + err)
+        log.error(err)
     }
 }
 
@@ -86,9 +92,13 @@ function updateFail(newData) {
     let existingJSON = [];
     try {
         return new Promise((res, rej) => {
+            let dir = path.dirname(FAILED_DB)
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, error => error ? log.error(error) : log.info('You have created the nested_directory'));
+            }
 
             fs.readFile(FAILED_DB, 'utf-8', (err, existingData) => {
-                if (existingData.length > 0) {
+                if (existingData && existingData.length > 0) {
                     existingJSON = JSON.parse(existingData);
                 }
                 existingJSON.push(newData);
@@ -96,7 +106,7 @@ function updateFail(newData) {
                 fs.writeFile(FAILED_DB, JSON.stringify(existingJSON, null, 2), (err, data) => {
                     if (err) throw err;
                     res(data)
-                    log.info('Data appended to file');
+                    log.info('failedgmap data updated');
                 });
             });
         })
@@ -111,10 +121,10 @@ function updateFail(newData) {
 /**
  * Fix the bug where my_session folder is always read only, cause unable to rename file as required by telegram
  */
-async function makeSessionFilesWritable(mysession = "my_session") {
-    const files = await fs.promises.readdir(mysession);
+async function makeSessionFilesWritable(sessionName) {
+    const files = await fs.promises.readdir(sessionName);
     for (const file of files) {
-        const filePath = path.join(mysession, file);
+        const filePath = path.join(sessionName, file);
         const stats = await fs.promises.stat(filePath);
         const isReadOnly = !!(stats.mode & 0o200);
         if (isReadOnly) {
@@ -125,4 +135,4 @@ async function makeSessionFilesWritable(mysession = "my_session") {
 }
 
 
-module.exports = { updateLastMsgId, getLastMsgId, getChat, updateChat, updateFail, makeSessionFilesWritable }
+module.exports = { updateLastMsgId, getLastMsgId, getChat, updateChat, updateFail, makeSessionFilesWritable,readDb }

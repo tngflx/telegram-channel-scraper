@@ -1,20 +1,26 @@
 const { getChannelsID, chatHistory, callbackBothClients } = require('./chat-history')
+const config = require('./config');
 const db = require('./utils/db');
 const { TelegramClient } = require('telegram')
 const { StoreSession } = require('telegram/sessions');
-const storeSession = new StoreSession("my_session");
+
+let gramsessionName = "gram_sessions"
+const storeSession = new StoreSession(gramsessionName);
 
 const express = require("express");
 var bodyParser = require('body-parser')
-
-let { BASE_TEMPLATE, PHONE_FORM, PASSWORD_FORM, CODE_FORM } = require('./frontend/html');
-const config = require('./config');
-const { Logger, LogLevel } = require('./utils/logger');
-const { WhatsAppClient } = require('./utils/whatsapp');
-const { callbackPromise } = require('./utils/helper');
-const WAclient = new WhatsAppClient()
-
 const app = express();
+
+let { handleAssets, FAIL_PAGE, SUCCESS_PAGE, CODE_FORM, QR_IMAGE, ADD_SCRIPT } = require('./frontend/html')
+
+const { Logger, LogLevel } = require('./utils/logger');
+
+const { WhatsAppClient, Events } = require('./utils/whatsapp');
+const { callbackPromise } = require('./utils/helper');
+const { WebSocket } = require('./websocket');
+const WS = new WebSocket()
+
+const WAclient = new WhatsAppClient()
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -36,101 +42,129 @@ app.use(function (req, res, next) {
     next();
 });
 
+let sentWAMsgs;
 const gramLoggedIn = callbackPromise();
 const codeCallback = callbackPromise();
-let sentWAMsgs = [];
 
 // First you will receive a code via SMS or Telegram, which you have to enter
 // directly in the command line. If you entered the correct code, you will be
 // logged in and the credentials are saved.
 
-(async () => {
-    const port = process.env.PORT == '' ? process.env.PORT : 80
-    app.listen(port, () => log.info('API running on port ' + port))
-    let [WAclientStatus, gramclientStatus] = await Promise.all([
-        WAclient.checkAuthStatus(),
-        (async () => {
-            await gramClient.connect(); return gramClient.isUserAuthorized()
-        })()
-    ])
+handleAssets()
+    .then(async (HTML) => {
+        let BASE_TEMPLATE = HTML;
 
-    log.info(`WAclientStatus :${WAclientStatus}, GramclientStatus : ${gramclientStatus}`)
+        const port = process.env.PORT == '' ? process.env.PORT : 80
+        app.listen(port, () => log.info('API running on port ' + port))
 
-    switch (true) {
-        case WAclientStatus && gramclientStatus:
-            log.success('Telegram : User logged in')
-            start()
-            break;
+        // if environment is dev, clear channels.json for retrieve new update
+        if (process.env.NODE_ENV == 'dev')
+            db.updateChat("")
 
-        case WAclientStatus && !gramclientStatus:
-            app.get("/", async (req, res) => {
-                // add qr code if there is
-                res.send(BASE_TEMPLATE.replace("{{0}}", CODE_FORM));
+        let [WAclientStatus, gramclientStatus] = await Promise.all([
+            WAclient.checkAuthStatus(),
+            (async () => {
+                await gramClient.connect(); return gramClient.isUserAuthorized()
+            })()
+        ])
 
-                await gramClient.start({
-                    phoneNumber: config.telegram.phone,
-                    phoneCode: async () => codeCallback.promise,
-                    password: '',
-                    onError: (err) => {
-                        throw (err)
-                    }
-                });
+        log.info(`WAclientStatus :${WAclientStatus}, GramclientStatus : ${gramclientStatus}`)
 
-                await gramClient.connect()
-                gramLoggedIn.resolve(true)
+        switch (true) {
+            case WAclientStatus && gramclientStatus:
+                app.get('/', (req, res) => {
+                    res.redirect('/success')
+                })
                 start()
-            })
-            break;
+                break;
 
-        case !WAclientStatus && gramclientStatus:
-            // To reset back authstatus after its current state, cause promise only resolve once and non changeable
-            WAclient.authStatus = callbackPromise();
-
-            app.get("/", async (req, res) => {
-                res.send(BASE_TEMPLATE.replace("{{0}}", await WAclient.getQrImage()));
-
-                WAclientStatus = await WAclient.checkAuthStatus()
-                if (WAclientStatus)
+            case WAclientStatus && !gramclientStatus:
+                app.get("/", async (req, res) => {
+                    handleGramLogin(res)
                     start()
-                //if (WAclientStatus) res.redirect('/success')
+                })
+                break;
 
+            case !WAclientStatus && gramclientStatus:
+                // To reset back authstatus after its current state, cause promise only resolve once and non changeable
+
+                app.get("/", async (req, res) => {
+                    let qr = await handleWAlogin()
+                    BASE_TEMPLATE = await ADD_SCRIPT();
+                    res.send(BASE_TEMPLATE.replace("{{0}}", qr))
+
+                })
+
+                break;
+
+            default:
+                // To reset back authstatus after its current state, cause promise only resolve once and non changeable
+                app.get("/", async (req, res) => {
+                    // add qr code if there is
+                    let qr = await handleWAlogin()
+                    await handleGramLogin(res, qr)
+
+                    if (await WAclient.checkAuthStatus())
+                        start()
+                })
+                break;
+        }
+
+
+        const handleWAlogin = async () => {
+            let qr = await WAclient.getQRImage()
+            QR_IMAGE = QR_IMAGE.replace("{{qr}}", qr)
+
+            WAclient.checkAuthStatus(async qrDataURL => {
+                WS.sendMsg({ qrDataURL })
+
+                let status = await WAclient.checkAuthStatus()
+                if (status) {
+                    WS.sendMsg({ redirect: 'success' })
+                    start()
+                }
             })
 
-            break;
+            return QR_IMAGE;
+        }
 
-        default:
-            // To reset back authstatus after its current state, cause promise only resolve once and non changeable
-            WAclient.authStatus = callbackPromise();
+        /**
+         * Handle gram Login
+         * @param {any} res expressjs response
+         * @param {any} ADD_HTML additional html to add to code_form
+         * @param {any} BASE_TEMPLATE base html for web
+         * @returns
+         */
+        const handleGramLogin = async (res, ADD_HTML) => {
+            CODE_FORM += ADD_HTML
+            BASE_TEMPLATE = BASE_TEMPLATE.replace("{{0}}", CODE_FORM)
+            res.send(BASE_TEMPLATE);
 
-            app.get("/", async (req, res) => {
-                // add qr code if there is
-                CODE_FORM += await WAclient.getQrImage()
-                res.send(BASE_TEMPLATE.replace("{{0}}", CODE_FORM));
+            await gramClient.start({
+                phoneNumber: config.telegram.phone,
+                phoneCode: async () => codeCallback.promise,
+                password: '',
+                onError: (err) => {
+                    gramLoggedIn.resolve(false)
+                    log.error(err)
+                }
+            });
 
-                await gramClient.start({
-                    phoneNumber: config.telegram.phone,
-                    phoneCode: async () => codeCallback.promise,
-                    password: '',
-                    onError: (err) => {
-                        log.error(err)
-                    }
-                });
+            await gramClient.connect()
+            return gramLoggedIn.resolve(true)
+        }
 
-                await gramClient.connect()
-                gramLoggedIn.resolve(true)
-                start()
-            })
-            break;
-    }
-})()
+    })
+
 
 app.get('/success', (req, res) => {
-    return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>LOGGED IN SUCCESS</h1>`));
+    return res.send(SUCCESS_PAGE());
 })
 
 app.get('/fail', (req, res) => {
-    return res.send(BASE_TEMPLATE.replace("{{0}}", `<h1>LOGGED IN FAILED</h1>`));
+    return res.send(FAIL_PAGE());
 })
+
 
 app.post("/", async (req, res) => {
     //To access POST variable use req.body()methods.
@@ -143,14 +177,15 @@ app.post("/", async (req, res) => {
         else {
             res.redirect('/fail')
         }
-    };
+    }
 })
 
 const run = async (channels) => {
-    await db.makeSessionFilesWritable()
+    await db.makeSessionFilesWritable(gramsessionName)
     sentWAMsgs = await chatHistory(channels)
 }
 
+let timerId;
 const start = async () => {
     callbackBothClients(gramClient, WAclient)
     let channels = await db.getChat();
@@ -159,9 +194,11 @@ const start = async () => {
         channels = await getChannelsID();
         await db.updateChat(channels)
     }
-
-    let timerId = setTimeout(function tick() {
+    (function tick() {
         run(channels);
-        timerId = setTimeout(tick, 60000);
-    }, 2000);
+        timerId = setTimeout(function () {
+            clearTimeout(timerId);
+            tick();
+        }, 60000);
+    })();
 }

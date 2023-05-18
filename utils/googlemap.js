@@ -1,5 +1,5 @@
 const { Client } = require("@googlemaps/google-maps-services-js");
-const { gmap: { API_KEY, geolocate }, telegram: { msgHistory } } = require('../config');
+const { gmap: { API_KEY: key, geolocate }, telegram: { msgHistory } } = require('../config');
 const { Logger, LogLevel } = require("./logger");
 const { updateFail } = require('./db');
 
@@ -14,7 +14,7 @@ class Gmap {
 
     _initialize() {
         if (typeof geolocate == 'boolean' && geolocate) {
-            return this.client.geolocate({ params: { key: API_KEY }, data: { considerIp: true } })
+            return this.client.geolocate({ params: { key }, data: { considerIp: true } })
                 .then(({ data }) => {
                     const { lat, lng } = data.location;
                     log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
