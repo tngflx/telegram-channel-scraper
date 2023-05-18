@@ -16,13 +16,10 @@ module.exports = {
     async handleAssets() {
 
         let css = await db.readDb('./frontend/front.css')
+        let script = await db.readDb('./frontend/script.js')
+        BASE_TEMPLATE = BASE_TEMPLATE.replace('{{script}}', script.trim())
         BASE_TEMPLATE = BASE_TEMPLATE.replace('{{style}}', css.trim())
         return BASE_TEMPLATE;
-    },
-
-    async ADD_SCRIPT() {
-        let script = await db.readDb('./frontend/script.js')
-        return BASE_TEMPLATE.replace('{{script}}', script.trim())
     },
 
     SUCCESS_PAGE() {
