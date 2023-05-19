@@ -53,8 +53,7 @@ const chatHistory = async (channels) => {
         do {
             await sleep(300)
             let history = await GramClient.getMessages(channelId, {
-                maxId: -offsetId,
-                addOffset: locum_only_messages.length,
+                minId: offsetId,
                 limit: maxNumUnfiltrMsgsPerChannel
             });
 

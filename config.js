@@ -27,7 +27,8 @@ const config = {
         geolocate: true
     },
     whatsapp: {
-        SecParty_phone_num: process.env.WHATSAPP_2NDPARTY_PHONE_NUMBER
+        SecParty_phone_num: process.env.WHATSAPP_2NDPARTY_PHONE_NUMBER,
+        clearMsg: true
     },
     channelinfodb: process.env.CHANNELSINFO_FILE,
     failedGmapQuerydb: process.env.FAILEDGMAPQUERY_FILE,

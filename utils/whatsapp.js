@@ -5,7 +5,7 @@ const qrcode = require('qrcode');
 const { Logger, LogLevel } = require('./logger')
 const log = new Logger(LogLevel.DEBUG)
 
-const { whatsapp: { SESSION_FILE } } = require('../config')
+const { whatsapp: { clearMsg }, telegram } = require('../config')
 const { whatsapp: { SecParty_phone_num }, telegram: { phone } } = require('../config');
 const { callbackPromise } = require('./helper');
 
@@ -26,6 +26,7 @@ class WhatsAppClient extends Client {
         this.myPhoneNum = null;
         this.groupID = null;
         this.qrImage = callbackPromise()
+        this.authStatus = callbackPromise()
         this.attachListeners()
     }
 
@@ -35,40 +36,8 @@ class WhatsAppClient extends Client {
         return _serialized;
     }
 
-    async checkAuthStatus(cb) {
-        // Remove all previous listeners for the events
-        // Prevent memory leak problem
-        this.removeAllListeners(Events.QR_RECEIVED);
-        this.removeAllListeners(Events.AUTHENTICATED);
-        this.removeAllListeners(Events.AUTHENTICATION_FAILURE);
-
-        return new Promise((resolve) => {
-            this.on(Events.QR_RECEIVED, (qr) => {
-                qrcode.toDataURL(qr, (err, url) => {
-                    if (err) {
-                        log.error('Error generating QR code:', err);
-                        resolve(true);
-                    } else {
-                        this.qrImage.resolve(url)
-                        if (cb && typeof cb == 'function') {
-                            cb(url)
-                        }
-                        resolve(false);
-                    }
-                });
-            });
-
-            // WhatsApp authenticated
-            this.on(Events.AUTHENTICATED, () => {
-                resolve(true)
-            });
-
-            // WhatsApp authentication failure
-            this.on(Events.AUTHENTICATION_FAILURE, () => {
-                resolve(false)
-                log.error('not authenticated');
-            });
-        })
+    async checkAuthStatus() {
+        return this.authStatus.promise;
     }
 
     // to get first qrimage
@@ -76,7 +45,37 @@ class WhatsAppClient extends Client {
         return await this.qrImage.promise
     }
 
+    aggregateAuthListener() {
+        this.on('auth_status', (status, url) => {
+            this.qrImage.resolve(url)
+            this.authStatus.resolve(status);
+        })
+    }
+
     async attachListeners() {
+        this.aggregateAuthListener()
+
+        this.on(Events.QR_RECEIVED, (qr) => {
+            qrcode.toDataURL(qr, (err, url) => {
+                if (err) {
+                    log.error('Error generating QR code:', err);
+                    this.emit('auth_status', false)
+                } else {
+                    this.emit('auth_status', false, url)
+                }
+            });
+        });
+
+        // WhatsApp authenticated
+        this.on(Events.AUTHENTICATED, () => {
+            this.emit('auth_status', true)
+        });
+
+        // WhatsApp authentication failure
+        this.on(Events.AUTHENTICATION_FAILURE, () => {
+            this.emit('auth_status', false)
+            log.error('not authenticated');
+        });
 
         // WhatsApp ready
         this.on(Events.READY, async () => {
@@ -87,7 +86,7 @@ class WhatsAppClient extends Client {
             return super.getChats().then((chats) => {
                 const myGroup = chats.find((chat) => chat.name === this.myGroupName);
 
-                if (process.env.NODE_ENV == 'dev') {
+                if (process.env.NODE_ENV == 'dev' || clearMsg == true) {
                     myGroup.clearMessages().then(status => {
                         log.info('WA.clearMessages: ' + status)
                     })
@@ -105,7 +104,7 @@ class WhatsAppClient extends Client {
 
 
             }).catch(err => {
-                this.authStatus.resolve(false)
+                this.emit('auth_status', false)
                 log.error(err)
             })
 

@@ -80,8 +80,10 @@ handleAssets()
 
             case WAclientStatus && !gramclientStatus:
                 app.get("/", async (req, res) => {
-                    handleGramLogin(res)
-                    start()
+                    await handleGramLogin(res)
+
+                    if (gramLoggedIn.promise)
+                        start()
                 })
                 break;
 
@@ -103,8 +105,7 @@ handleAssets()
                     let qr = await handleWAlogin()
                     await handleGramLogin(res, qr)
 
-                    if (await WAclient.checkAuthStatus())
-                        start()
+
                 })
                 break;
         }
@@ -114,14 +115,12 @@ handleAssets()
             let qr = await WAclient.getQRImage()
             QR_IMAGE = QR_IMAGE.replace("{{qr}}", qr)
 
-            WAclient.checkAuthStatus(async qrDataURL => {
-                WS.sendMsg({ qrDataURL })
+            WAclient.on('auth_status', async (status, qrDataURL) => {
+                if (qrDataURL)
+                    WS.sendMsg({ qrDataURL })
 
-                let status = await WAclient.checkAuthStatus()
-                if (status) {
+                if (status && await gramLoggedIn.promise)
                     WS.sendMsg({ redirect: 'success' })
-                    start()
-                }
             })
 
             return QR_IMAGE;
@@ -135,7 +134,7 @@ handleAssets()
          * @returns
          */
         const handleGramLogin = async (res, ADD_HTML) => {
-            CODE_FORM += ADD_HTML
+            ADD_HTML ? CODE_FORM += ADD_HTML : CODE_FORM
             BASE_TEMPLATE = BASE_TEMPLATE.replace("{{0}}", CODE_FORM)
             res.send(BASE_TEMPLATE);
 
