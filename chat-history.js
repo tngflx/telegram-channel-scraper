@@ -119,7 +119,7 @@ const chatHistory = async (channels) => {
     const reformatWA_filterDistance_locums = await filter_locum_distance(filter_taken)
 
     let sentToWA = [];
-    if (reformatWA_filterDistance_locums.length > 0 && reformatWA_filterDistance_locums[0]?.[0]?.hasOwnProperty('full_msg')) {
+    if (reformatWA_filterDistance_locums.length > 0) {
 
         sentToWA = await reformatWA_filterDistance_locums.reduce(async (accum, { name, ...chats }) => {
             const previousResult = await accum;
@@ -152,6 +152,7 @@ const filter_skipped_keywords = async (msgs) => {
 
     for (const { chats, name } of msgs) {
         let replies_msg = []
+        if (!(chats.length > 0)) break;
 
         for (const { message, replies, replyTo, id, date, peerId, ...rest } of chats) {
             let received_replies_num = replies?.replies;
@@ -196,15 +197,23 @@ const filter_skipped_keywords = async (msgs) => {
  * @param {any} locum_only_messages
  */
 const filter_locum_distance = async (msgs) => {
+    if (!msgs || msgs.length === 0) {
+        return null;
+    }
+
     let accepted_locums = []
 
     const { tolerable_travel_duration_min, tolerable_work_duration_hours, tolerable_lowest_rate } = msgHistory;
 
     for (const { chats, name } of msgs) {
-        let accepted_locum_body = [];
+        let accepted_locum_per_channel = [];
+        if (!(chats.length > 0)) break;
 
         for (const [channel_index, { parent_msg }] of chats.entries()) {
             let msg_body_lines = parent_msg.split('\n').filter((m) => m.trim() !== '')
+            const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/g
+            msg_body_lines = msg_body_lines.map(text => { text = text.replace(emojiRegex, ''); return text.trim() })
+
             let checked_clinic = false //If the clinic name checked before, stop process google map
 
             for (const msg_line of msg_body_lines) {
@@ -225,10 +234,15 @@ const filter_locum_distance = async (msgs) => {
                 /** 
                  * match all kind phone number and form whatsapp link from it
                  */
-                let phone_numbers = msg_line.match(/(\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/g)
+                let phone_numbers = msg_line.match(/(\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{2,4}/g)
                 phone_numbers = phone_numbers?.[0]
 
                 let work_time = msg_line.match(/\d{1,2}\.*\d{0,2}\s?[ap]m/gi)
+
+                let malaysian_address = /(Lot|No|\d+).*(Jalan|Jln|Lorong|Lrg|Lebuhraya|Lebuh|Persiaran|Psn|Kampung|Kg|Menara).*,.*/gi
+                malaysian_address = msg_line.match(malaysian_address)
+
+                let locum_date = msg_line.match(/\d{1,2}\s?[\/\-.]\s?\d{1,2}\s?[\/\-.]\s?\d{2,4}|\d{1,2}\s?[a-zA-Z]+\s?\d{2,4}|\d{1,2}\s?[\/\-.]\s?\d{1,2}/gi)
 
                 if (clinic_name && !locum_rate && !checked_clinic) {
                     if (/chill|whatsapp/i.test(clinic_name)) continue;
@@ -254,40 +268,63 @@ const filter_locum_distance = async (msgs) => {
                         }
 
                         /**
-                         * If duration is less than an hour, check for locum rate
+                         * If travel duration is less than an hour, check for locum rate
                          */
                         if (parseInt(duration) < parseInt(tolerable_travel_duration_min)) {
-                            accepted_locum_body[channel_index] = { full_msg: msg_body_lines, distance, travel_duration_min: duration }
+                            accepted_locum_per_channel[channel_index] = { full_msg: msg_body_lines, distance, travel_duration_min: duration }
                             continue;
                         }
                     }
 
                     // If previous clinic wasn't put in accepted_locum_body, meant it was not accepted
                     // Locum rate is on the next line of message
-                } else if (locum_rate && accepted_locum_body[channel_index] != null) {
-                    if (parseInt(locum_rate) < parseInt(tolerable_lowest_rate)) {
-                        accepted_locum_body.splice(channel_index, 1)
-                        break;
-                    } else if (parseInt(locum_rate) >= parseInt(tolerable_lowest_rate)) {
-                        accepted_locum_body[channel_index] = { ...accepted_locum_body[channel_index], locum_rate: locum_rate }
-                    }
-                } else if ((phone_numbers || whatsapp_link) && accepted_locum_body[channel_index] != null) {
-                    if (whatsapp_link) {
-                        accepted_locum_body[channel_index] = { ...accepted_locum_body[channel_index], whatsapp_link }
-                    } else {
-                        accepted_locum_body[channel_index] = { ...accepted_locum_body[channel_index], whatsapp_link: `https://wa.me/+6${phone_numbers}` }
-                    }
-                } else if (work_time && accepted_locum_body[channel_index] != null) {
-                    // Convert am/pm to 24hours format, calculate durations
-                    let [startTime, endTime] = work_time;
-                    if (!startTime || !endTime) continue;
-                    let work_duration = Moment.calcDuration(startTime, endTime)
+                }
 
-                    if (work_duration >= tolerable_work_duration_hours * 60) {
-                        accepted_locum_body[channel_index] = { ...accepted_locum_body[channel_index], work_duration: `${work_duration / 60} hour` }
-                    } else {
-                        accepted_locum_body.splice(channel_index, 1)
-                        continue;
+                if (accepted_locum_per_channel[channel_index]) {
+                    if (locum_rate) {
+                        if (parseInt(locum_rate) < parseInt(tolerable_lowest_rate)) {
+                            accepted_locum_per_channel.splice(channel_index, 1)
+                            break;
+                        } else if (parseInt(locum_rate) >= parseInt(tolerable_lowest_rate)) {
+                            accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], locum_rate: locum_rate }
+                        }
+
+                    }
+                    if ((phone_numbers || whatsapp_link)) {
+                        if (whatsapp_link) {
+                            accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], whatsapp_link }
+                        } else {
+                            accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], whatsapp_link: `https://wa.me/+6${phone_numbers}` }
+                        }
+
+                    }
+                    if (work_time) {
+                        // Convert am/pm to 24hours format, calculate durations
+                        let [startTime, endTime] = work_time;
+                        if (!startTime || !endTime)
+                            continue;
+                        let work_duration = Moment.Time.calcDuration(startTime, endTime)
+                        const tolerable_work_duration_mins = tolerable_work_duration_hours * 60
+
+                        if (work_duration >= tolerable_work_duration_mins) {
+                            accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], work_duration: `${work_duration / 60} hour` }
+                        } else if (work_duration < tolerable_work_duration_mins) {
+                            accepted_locum_per_channel.splice(channel_index, 1)
+                            break;
+                        }
+                    }
+                    if (locum_date && locum_date.length > 0 && !phone_numbers && !work_time && !malaysian_address) {
+                        locum_date = locum_date.reduce((acc, dateString) => {
+                            dateString = Moment.Date.convertDateFormat(dateString)
+                            const currentDate = new Date(dateString);
+                            if (!acc.latestDate || currentDate > acc.latestDate) {
+                                acc = currentDate;
+                            }
+                            return acc;
+                        }, '');
+
+                        accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], locum_date }
+                        accepted_locum_per_channel.sort((a, b) => a.locum_date - b.locum_date);
                     }
                 }
             }
@@ -295,9 +332,10 @@ const filter_locum_distance = async (msgs) => {
         }
         let combine_channel_name = {
             name,
-            ...accepted_locum_body.filter(val => val) //Reindex array back
+            ...accepted_locum_per_channel.filter(val => val) //Reindex array back
         }
         accepted_locums.push(combine_channel_name)
+        console.log(accepted_locums)
     }
     return accepted_locums
 

@@ -81,8 +81,7 @@ class Gmap {
 
         return this.client.findPlaceFromText({ params })
             .then(({ data }) => {
-                console.log(data, place)
-                let { place_id, name, formatted_address, geometry } = data?.candidates[0];
+                let { place_id, name, formatted_address, geometry } = data?.candidates[0] || null;
 
                 return {
                     place_id,
