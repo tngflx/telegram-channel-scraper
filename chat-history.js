@@ -119,7 +119,7 @@ const chatHistory = async (channels) => {
     const reformatWA_filterDistance_locums = await filter_locum_distance(filter_taken)
 
     let sentToWA = [];
-    if (reformatWA_filterDistance_locums.length > 0) {
+    if (reformatWA_filterDistance_locums?.length > 0) {
 
         sentToWA = await reformatWA_filterDistance_locums.reduce(async (accum, { name, ...chats }) => {
             const previousResult = await accum;
@@ -234,7 +234,7 @@ const filter_locum_distance = async (msgs) => {
                 /** 
                  * match all kind phone number and form whatsapp link from it
                  */
-                let phone_numbers = msg_line.match(/(\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{2,4}/g)
+                let phone_numbers = msg_line.match(/[\+6]?(\d{2,3})\s*[-\S]\s*(\d{7,8})/g)
                 phone_numbers = phone_numbers?.[0]
 
                 let work_time = msg_line.match(/\d{1,2}\.*\d{0,2}\s?[ap]m/gi)
@@ -313,18 +313,30 @@ const filter_locum_distance = async (msgs) => {
                             break;
                         }
                     }
-                    if (locum_date && locum_date.length > 0 && !phone_numbers && !work_time && !malaysian_address) {
-                        locum_date = locum_date.reduce((acc, dateString) => {
-                            dateString = Moment.Date.convertDateFormat(dateString)
-                            const currentDate = new Date(dateString);
-                            if (!acc.latestDate || currentDate > acc.latestDate) {
-                                acc = currentDate;
-                            }
-                            return acc;
-                        }, '');
+                    if (locum_date?.[0] && !phone_numbers && !work_time && !malaysian_address) {
 
-                        accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], locum_date }
-                        accepted_locum_per_channel.sort((a, b) => a.locum_date - b.locum_date);
+                        locum_date = new Date(Moment.Date.convertDateFormat(locum_date[0]))
+                        let otherDates = accepted_locum_per_channel[channel_index]?.['locum_date']?.['otherDates']
+
+                        if (Array.isArray(otherDates)) {
+                            otherDates = otherDates.push(locum_date)
+                            let latest = otherDates.reduce((acc, dateString) => {
+                                const currentDate = new Date(dateString);
+                                if (!acc.latestDate || currentDate > acc.latestDate) {
+                                    acc = currentDate;
+                                }
+                                return acc;
+                            }, '');
+                            accepted_locum_per_channel[channel_index]['locum_date'] = { latest, otherDates }
+
+                        } else {
+                            accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], locum_date: { latest: locum_date, otherDates: [locum_date] } }
+                            accepted_locum_per_channel.sort((a, b) => {
+                                console.log(a.locum_date)
+                                console.log(b.locum_date)
+                                a.locum_date.latest - b.locum_date.latest
+                            });
+                        }
                     }
                 }
             }
@@ -365,20 +377,15 @@ const reformatClinicName = (msg_line, msg_body_lines) => {
         //Contains for
         case /for.*\d+/i.test(clinic_name):
             return clinic_name.replace('FOR ', '').replace(' 2023', '')
-            break;
         //Contains DD/MM/YY or DD-MM-YY format
         case ddmmyyRegex.test(clinic_name):
-            let replace_name = clinic_name.replace(ddmmyyRegex, '')
-            return replace_name
-            break;
+            return clinic_name.replace(ddmmyyRegex, '')
         //Contains true address
         case true_address:
             return true_address
-            break;
         //Contains non-string character at end of name
         case nonStringCharReg.test(clinic_name):
             return clinic_name.replace(nonStringCharReg, '')
-            break;
         default:
             return clinic_name ? clinic_name : hospital_name;
     }

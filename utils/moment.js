@@ -48,46 +48,49 @@ class moment {
     }
 
     Date = {
-        dateFormats: [
-            /(\d{2})\/(\d{2})\/(\d{4})/,            // MM/DD/YYYY
-            /(\d{2})-(\d{2})-(\d{4})/,               // DD-MM-YYYY
-            /(\d{4})\/(\d{2})\/(\d{2})/,             // YYYY/MM/DD
-            /([a-zA-Z]+) (\d{2}), (\d{4})/,           // MMM DD, YYYY
-            /(\d{4})-([a-zA-Z]+)-(\d{2})/,            // YYYY-MMM-DD
-            /(\d{2})th ([a-zA-Z]+) (\d{4})/,          // DDth MMM YYYY
-            /(\d{2}) ([a-zA-Z]+), (\d{4})/,           // DD MMM, YYYY
-            /([a-zA-Z]+) (\d{2})th, (\d{4})/,          // MMM DDth, YYYY
-            /(\d{2})\.(\d{2})\.(\d{2,4})/               // DD.MM.YY or YYYY
-        ],
-
         convertDateFormat(dateString) {
-            const currentYear = new Date().getFullYear();
+            const currentYear = new Date().getFullYear().toString();
             const addPaddingifSingleNum = (date_string) =>
-                date_string.length === 1 ? date_string : date_string.toString().padStart(2, '0')
+                date_string.length === 1 ? date_string.toString().padStart(2, '0') : date_string
 
 
             const formats = [
-                [/(\d{2})\/(\d{2})\/23/, `${currentYear}-$2-$1`],
-                [/(\d{2})\/(\d{1,2})\/(\d{4})/, (match) => { match[3] + '-' + addPaddingifSingleNum(match[2]) + '-' + match[1] }],
-                [/(\d{2})-(\d{2})-(\d{4})/, '$3-$2-$1'],
-                [/(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3'],
-                [/([a-zA-Z]+) (\d{2}), (\d{4})/, (match) => this.formatDateFromMMM(match[1]) + '-' + match[2] + '-' + match[3]],
-                [/(\d{4})-([a-zA-Z]+)-(\d{2})/, (match) => match[1] + '-' + this.formatDateFromMMM(match[2]) + '-' + match[3]],
-                [/(\d{2})th ([a-zA-Z]+) (\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[2]) + '-' + this.removeOrdinalSuffix(match[1])],
-                [/(\d{2}) ([a-zA-Z]+)[, ](\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[2]) + '-' + match[1]],
-                [/([a-zA-Z]+) (\d{2})th, (\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[1]) + '-' + this.removeOrdinalSuffix(match[2])],
-                [/^(\d{2})(?:[-\/\.]?)(\d{1,2})$/, (match) => {
+                // Matches: DD/MM/YY, where YY represents the last two digits of the current year
+                [`/(\d{1,2})\/(\d{1,2})\/${currentYear.slice(2)}/`, (match) => `${currentYear}-${addPaddingifSingleNum(match[2])}-${addPaddingifSingleNum(match[1])}`],
+
+                // Matches: D.M.YYYY or DD.MM.YYYY or DD/MM/YYYY or D/M/YYYY or D/MM/YYYY
+                [/(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4})/, (match) => {
+                    const day = addPaddingifSingleNum(match[1])
+                    const month= addPaddingifSingleNum(match[2])
+                    return `${match[3]}-${month}-${day}`;
+                }],
+
+                // Matches: DD-MM or DD/MM or D/M or DD/M or D/MM
+                [/^(\d{1,2})(?:[-\/\.]?)(\d{1,2})$/, (match) => {
                     const month = addPaddingifSingleNum(match[2]);
-                    const day = match[1].toString().padStart(2, '0');
+                    const day = addPaddingifSingleNum(match[1])
                     return `${currentYear}-${month}-${day}`;
                 }],
-                [/(\d{2})\.(\d{2})\.(\d{2,4})/, (match) => {
-                    if (match[3].length === 2) {
-                        match[3] = '20' + match[3];
-                    }
-                    return match[3] + '-' + match[2] + '-' + match[1];
-                }]
+
+                // Matches: YYYY/MM/DD
+                [/(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3'],
+
+                // Matches: DD MonthName, YYYY
+                [/(\d{2}) ([a-zA-Z]+)[, ](\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[2]) + '-' + match[1]],
+
+                // Matches: MonthName DD, YYYY
+                [/([a-zA-Z]+) (\d{2}), (\d{4})/, (match) => this.formatDateFromMMM(match[1]) + '-' + match[2] + '-' + match[3]],
+
+                // Matches: YYYY-MonthName-DD
+                [/(\d{4})-([a-zA-Z]+)-(\d{2})/, (match) => match[1] + '-' + this.formatDateFromMMM(match[2]) + '-' + match[3]],
+
+                // Matches: DDth MonthName YYYY
+                [/(\d{2})th ([a-zA-Z]+) (\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[2]) + '-' + this.removeOrdinalSuffix(match[1])],
+
+                // Matches: MonthName DDth, YYYY
+                [/([a-zA-Z]+) (\d{2})th, (\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[1]) + '-' + this.removeOrdinalSuffix(match[2])]
             ];
+
 
             let date;
 
