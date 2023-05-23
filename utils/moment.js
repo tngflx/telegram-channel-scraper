@@ -53,23 +53,16 @@ class moment {
             const addPaddingifSingleNum = (date_string) =>
                 date_string.length === 1 ? date_string.toString().padStart(2, '0') : date_string
 
-
             const formats = [
                 // Matches: DD/MM/YY, where YY represents the last two digits of the current year
-                [`/(\d{1,2})\/(\d{1,2})\/${currentYear.slice(2)}/`, (match) => `${currentYear}-${addPaddingifSingleNum(match[2])}-${addPaddingifSingleNum(match[1])}`],
+                [new RegExp(`(\\d{1,2})/(\\d{1,2})/${currentYear.slice(2)}`), (match) =>
+                    `${currentYear}-${addPaddingifSingleNum(match[2])}-${addPaddingifSingleNum(match[1])}`],
 
                 // Matches: D.M.YYYY or DD.MM.YYYY or DD/MM/YYYY or D/M/YYYY or D/MM/YYYY
                 [/(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4})/, (match) => {
                     const day = addPaddingifSingleNum(match[1])
-                    const month= addPaddingifSingleNum(match[2])
+                    const month = addPaddingifSingleNum(match[2])
                     return `${match[3]}-${month}-${day}`;
-                }],
-
-                // Matches: DD-MM or DD/MM or D/M or DD/M or D/MM
-                [/^(\d{1,2})(?:[-\/\.]?)(\d{1,2})$/, (match) => {
-                    const month = addPaddingifSingleNum(match[2]);
-                    const day = addPaddingifSingleNum(match[1])
-                    return `${currentYear}-${month}-${day}`;
                 }],
 
                 // Matches: YYYY/MM/DD
@@ -88,21 +81,30 @@ class moment {
                 [/(\d{2})th ([a-zA-Z]+) (\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[2]) + '-' + this.removeOrdinalSuffix(match[1])],
 
                 // Matches: MonthName DDth, YYYY
-                [/([a-zA-Z]+) (\d{2})th, (\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[1]) + '-' + this.removeOrdinalSuffix(match[2])]
+                [/([a-zA-Z]+) (\d{2})th, (\d{4})/, (match) => match[3] + '-' + this.formatDateFromMMM(match[1]) + '-' + this.removeOrdinalSuffix(match[2])],
+
+                // Matches: DD-MM or DD/MM or D/M or DD/M or D/MM
+                [/^(\d{1,2})[-\/\.](\d{1,2})(?!.*[Rr][Mm])/, (match) => {
+                    if (match.length < 3) return false;
+                    const month = addPaddingifSingleNum(match[2]);
+                    const day = addPaddingifSingleNum(match[1])
+                    return `${currentYear}-${month}-${day}`;
+                }]
             ];
 
 
             let date;
 
-            formats.forEach(([format, replacement]) => {
+            for (const [format, replacement] of formats) {
                 const match = dateString.match(format);
                 if (match) {
                     date = typeof replacement === 'function' ? replacement(match) : dateString.replace(format, replacement);
-                    return;
+                    break;
                 }
-            });
+            }
 
             return date;
+
         },
 
         formatDateFromMMM(month) {

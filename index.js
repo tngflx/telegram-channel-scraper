@@ -51,15 +51,19 @@ const codeCallback = callbackPromise();
 // logged in and the credentials are saved.
 
 handleAssets()
+    .then((HTML) => {
+        // if environment is dev, clear channels.json for retrieve new update
+        if (process.env.NODE_ENV == 'dev') {
+            db.updateChat("")
+            db.updateFail("clear")
+        }
+        return HTML
+    })
     .then(async (HTML) => {
         let BASE_TEMPLATE = HTML;
 
         const port = process.env.PORT == '' ? process.env.PORT : 80
         app.listen(port, () => log.info('API running on port ' + port))
-
-        // if environment is dev, clear channels.json for retrieve new update
-        if (process.env.NODE_ENV == 'dev')
-            db.updateChat("")
 
         let [WAclientStatus, gramclientStatus] = await Promise.all([
             WAclient.checkAuthStatus(),
@@ -197,6 +201,6 @@ const start = async () => {
         timerId = setTimeout(function () {
             clearTimeout(timerId);
             tick();
-        }, 60000);
+        }, config.telegram.msgHistory.executeIntervalMin * 60 * 1000);
     })();
 }

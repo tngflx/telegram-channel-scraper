@@ -97,18 +97,26 @@ function updateFail(newData) {
                 fs.mkdirSync(dir, error => error ? log.error(error) : log.info('You have created the nested_directory'));
             }
 
-            fs.readFile(FAILED_DB, 'utf-8', (err, existingData) => {
-                if (existingData && existingData.length > 0) {
-                    existingJSON = JSON.parse(existingData);
-                }
-                existingJSON.push(newData);
-
-                fs.writeFile(FAILED_DB, JSON.stringify(existingJSON, null, 2), (err, data) => {
+            if (newData == 'clear') {
+                fs.writeFile(FAILED_DB, "", (err, data) => {
                     if (err) throw err;
                     res(data)
-                    log.info('failedgmap data updated');
+                    log.info('failedgmap: cleared');
                 });
-            });
+            } else {
+                fs.readFile(FAILED_DB, 'utf-8', (err, existingData) => {
+                    if (existingData && existingData.length > 0) {
+                        existingJSON = JSON.parse(existingData);
+                    }
+                    existingJSON.push(newData);
+
+                    fs.writeFile(FAILED_DB, JSON.stringify(existingJSON, null, 2), (err, data) => {
+                        if (err) throw err;
+                        res(data)
+                        log.info('failedgmap: updated');
+                    });
+                });
+            }
         })
 
 
@@ -135,4 +143,4 @@ async function makeSessionFilesWritable(sessionName) {
 }
 
 
-module.exports = { updateLastMsgId, getLastMsgId, getChat, updateChat, updateFail, makeSessionFilesWritable,readDb }
+module.exports = { updateLastMsgId, getLastMsgId, getChat, updateChat, updateFail, makeSessionFilesWritable, readDb }

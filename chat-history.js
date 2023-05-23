@@ -78,7 +78,8 @@ const chatHistory = async (channels) => {
                 await db.updateLastMsgId(channels)
                 log.info(`channelName: ${name} lastMsgId: ${lastIdofMsgs}`)
             } else {
-                log.error('no current_messages passed filter, something wrong with filter')
+                log.error(`no current_messages for channel :${name}`)
+                break;
             }
 
 
@@ -152,7 +153,6 @@ const filter_skipped_keywords = async (msgs) => {
 
     for (const { chats, name } of msgs) {
         let replies_msg = []
-        if (!(chats.length > 0)) break;
 
         for (const { message, replies, replyTo, id, date, peerId, ...rest } of chats) {
             let received_replies_num = replies?.replies;
@@ -204,37 +204,35 @@ const filter_locum_distance = async (msgs) => {
     let accepted_locums = []
 
     const { tolerable_travel_duration_min, tolerable_work_duration_hours, tolerable_lowest_rate } = msgHistory;
+    const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/g
 
     for (const { chats, name } of msgs) {
         let accepted_locum_per_channel = [];
-        if (!(chats.length > 0)) break;
+        if (chats?.length == 0)
+            continue;
 
         for (const [channel_index, { parent_msg }] of chats.entries()) {
-            let msg_body_lines = parent_msg.split('\n').filter((m) => m.trim() !== '')
-            const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/g
+            let msg_body_lines = parent_msg.split('\n').filter((text) => text !== '')
             msg_body_lines = msg_body_lines.map(text => { text = text.replace(emojiRegex, ''); return text.trim() })
+
+            // Matches 'Klinik some', 'Poliklinik some','Sai poliklinik, 56000',
+            let clinic_name = await reformatClinicName(msg_body_lines)
+            if (/kemuning/gi.test(clinic_name))
+                console.log('')
 
             let checked_clinic = false //If the clinic name checked before, stop process google map
 
             for (const msg_line of msg_body_lines) {
-                /**
-                 * Matches 'Klinik some', 'Poliklinik some','Sai poliklinik, 56000',
-                 */
-                let clinic_name = reformatClinicName(msg_line, msg_body_lines)
-                /**
-                 * Extract rate from msg_line
-                 */
+                // Extract rate from msg_line
                 let locum_rate = msg_line.match(/(?<=^|\D)(?:RM\s?)?\d+(?:\.\d{1,2})?(?=(\s*\/(hour|hr|hrly|hourly|h))|(\s*\/\s*hr)|(\s*\/\s*hour)|\s+per\s+(hour|hr|h))/i)
                 locum_rate = null || locum_rate?.[0].replace(/[^\d.-]/g, '')
-                /**
-                 * Extract whatsapp link from msg_line
-                 */
+
+                // Extract whatsapp link from msg_line
                 let whatsapp_link = msg_line.match(/(?:api\.whatsapp\.com\/(.*)=\d{10,12})|(wa(?:s|ss)ap\.my|wa\.me)\/.\d+(?:\/\w+)?|(wa\.link)\/.*/gi)
                 whatsapp_link = whatsapp_link?.[0]
-                /** 
-                 * match all kind phone number and form whatsapp link from it
-                 */
-                let phone_numbers = msg_line.match(/[\+6]?(\d{2,3})\s*[-\S]\s*(\d{7,8})/g)
+
+                // match all kind phone number and form whatsapp link from it
+                let phone_numbers = msg_line.match(/[\+6]?(\d{2,3})\s*[-\S]\s*(\d{4})\s*(\d{3,4})/g)
                 phone_numbers = phone_numbers?.[0]
 
                 let work_time = msg_line.match(/\d{1,2}\.*\d{0,2}\s?[ap]m/gi)
@@ -242,10 +240,11 @@ const filter_locum_distance = async (msgs) => {
                 let malaysian_address = /(Lot|No|\d+).*(Jalan|Jln|Lorong|Lrg|Lebuhraya|Lebuh|Persiaran|Psn|Kampung|Kg|Menara).*,.*/gi
                 malaysian_address = msg_line.match(malaysian_address)
 
-                let locum_date = msg_line.match(/\d{1,2}\s?[\/\-.]\s?\d{1,2}\s?[\/\-.]\s?\d{2,4}|\d{1,2}\s?[a-zA-Z]+\s?\d{2,4}|\d{1,2}\s?[\/\-.]\s?\d{1,2}/gi)
+                let locum_date = msg_line.match(/\d{1,2}\s?[.\-/]\s?\d{1,2}\s?[.\-/]\s?\d{2,4}|\d{1,2}\s?[a-zA-Z]+\s?\d{2,4}|\d{1,2}\s?[.\-/]\s?\d{1,2}/gi)
 
                 if (clinic_name && !locum_rate && !checked_clinic) {
                     if (/chill|whatsapp/i.test(clinic_name)) continue;
+
                     checked_clinic = true;
 
                     let gmap_place = await gmap.getPlace(clinic_name)
@@ -272,14 +271,12 @@ const filter_locum_distance = async (msgs) => {
                          */
                         if (parseInt(duration) < parseInt(tolerable_travel_duration_min)) {
                             accepted_locum_per_channel[channel_index] = { full_msg: msg_body_lines, distance, travel_duration_min: duration }
-                            continue;
                         }
                     }
 
                     // If previous clinic wasn't put in accepted_locum_body, meant it was not accepted
                     // Locum rate is on the next line of message
                 }
-
                 if (accepted_locum_per_channel[channel_index]) {
                     if (locum_rate) {
                         if (parseInt(locum_rate) < parseInt(tolerable_lowest_rate)) {
@@ -314,89 +311,89 @@ const filter_locum_distance = async (msgs) => {
                         }
                     }
                     if (locum_date?.[0] && !phone_numbers && !work_time && !malaysian_address) {
-
                         locum_date = new Date(Moment.Date.convertDateFormat(locum_date[0]))
-                        let otherDates = accepted_locum_per_channel[channel_index]?.['locum_date']?.['otherDates']
+                        let multiDatesArr = accepted_locum_per_channel[channel_index]?.['locum_date']?.['multiDatesArr']
 
-                        if (Array.isArray(otherDates)) {
-                            otherDates = otherDates.push(locum_date)
-                            let latest = otherDates.reduce((acc, dateString) => {
-                                const currentDate = new Date(dateString);
-                                if (!acc.latestDate || currentDate > acc.latestDate) {
-                                    acc = currentDate;
+                        if (locum_date.toString() !== 'Invalid Date') {
+                            if (multiDatesArr?.length > 0) {
+                                const latestDateinArr = () => new Date(Math.max(...multiDatesArr));
+
+                                // Parasitical reduce loop to find day difference between each date
+                                const differenceInTime = locum_date.getTime() - latestDateinArr().getTime();
+                                const differenceInDays = differenceInTime / (1000 * 3600 * 24);
+
+                                if (Math.abs(differenceInDays) <= 20) {
+                                    multiDatesArr.push(locum_date)
                                 }
-                                return acc;
-                            }, '');
-                            accepted_locum_per_channel[channel_index]['locum_date'] = { latest, otherDates }
 
-                        } else {
-                            accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], locum_date: { latest: locum_date, otherDates: [locum_date] } }
-                            accepted_locum_per_channel.sort((a, b) => {
-                                console.log(a.locum_date)
-                                console.log(b.locum_date)
-                                a.locum_date.latest - b.locum_date.latest
-                            });
+                                accepted_locum_per_channel[channel_index]['locum_date'] = { latest: latestDateinArr(), multiDatesArr }
+
+                            } else if (!multiDatesArr || multiDatesArr.length == 0) {
+                                accepted_locum_per_channel[channel_index] = { ...accepted_locum_per_channel[channel_index], locum_date: { latest: locum_date, multiDatesArr: [locum_date] } }
+                            }
                         }
                     }
                 }
             }
-
         }
         let combine_channel_name = {
             name,
-            ...accepted_locum_per_channel.filter(val => val) //Reindex array back
+            ...accepted_locum_per_channel.sort((a, b) => a?.locum_date?.latest - b?.locum_date?.latest) //Reindex array back
         }
         accepted_locums.push(combine_channel_name)
         console.log(accepted_locums)
     }
-    return accepted_locums
+    return await accepted_locums
 
 }
 
-const reformatClinicName = (msg_line, msg_body_lines) => {
-    let [clinic_name] = msg_line.match(/\b(\w* ?\w*?[ck]lini[ck][^,]*)/i) || [null]
+const reformatClinicName = (msg_body_lines) => {
+    return new Promise((resolve, reject) => {
+        const regex = /\b(\w* ?\w*?[ck]lini[ck][^,]*)/i;
+        const nonStringCharReg = /[^\w\s]|_$/g;
+        const malaysian_address = /(Lot|No|\d+).*(Jalan|Jln|Lorong|Lrg|Lebuhraya|Lebuh|Persiaran|Psn|Kampung|Kg|Menara).*,.*/gi;
 
-    // remove all non string character in clinic_name
-    let nonStringCharReg = /[^\w\s]|_$/g
-    clinic_name = clinic_name?.replace(nonStringCharReg, '');
+        let matched = null;
 
-    let ddmmyyRegex = /\w+?\s\d{1,2}\/\d{1,2}\/\d{1,4}/i
+        for (const msg_line of msg_body_lines) {
+            let [clinic_name] = msg_line.match(regex) || [null];
+            let [hospital_name] = checkIfContainKeyword(msg_line, ['hospital']) || [null];
+            let [true_address] = msg_line.match(malaysian_address) || [null]
 
-    let [hospital_name] = msg_line.match(/.*\bhospital\b.*/i) || [null]
-    hospital_name = hospital_name?.replace(nonStringCharReg, '');
+            if (clinic_name && /for.*\d+|2023/i.test(clinic_name)) {
+                matched = clinic_name.replace('FOR ', '').replace(' 2023', '');
+                break;
+            }
 
-    // If there is address found, use that as clinic name instead
-    let malaysian_address = /(Lot|No|\d+).*(Jalan|Jln|Lorong|Lrg|Lebuhraya|Lebuh|Persiaran|Psn|Kampung|Kg|Menara).*,.*/gi
+            if (clinic_name && /\w+?\s\d{1,2}\/\d{1,2}\/\d{1,4}/i.test(clinic_name)) {
+                matched = clinic_name.replace(/\w+?\s\d{1,2}\/\d{1,2}\/\d{1,4}/i, '');
+                break;
+            }
 
-    let true_address = msg_body_lines.reduce((accum, msg, idx) => {
-        let [add] = msg.match(malaysian_address) || [null]
-        return add || accum;
-    }, null)
+            if (true_address) {
+                matched = true_address;
+                break;
+            }
 
-    switch (true) {
-        //Contains for
-        case /for.*\d+/i.test(clinic_name):
-            return clinic_name.replace('FOR ', '').replace(' 2023', '')
-        //Contains DD/MM/YY or DD-MM-YY format
-        case ddmmyyRegex.test(clinic_name):
-            return clinic_name.replace(ddmmyyRegex, '')
-        //Contains true address
-        case true_address:
-            return true_address
-        //Contains non-string character at end of name
-        case nonStringCharReg.test(clinic_name):
-            return clinic_name.replace(nonStringCharReg, '')
-        default:
-            return clinic_name ? clinic_name : hospital_name;
-    }
+            if (clinic_name && nonStringCharReg.test(clinic_name)) {
+                matched = clinic_name.replace(nonStringCharReg, '');
+                break;
+            }
 
+            if (clinic_name) {
+                matched = clinic_name;
+                break;
+            }
 
+            if (hospital_name) {
+                matched = hospital_name;
+                break;
+            }
+        }
+        resolve(matched);
+    });
 }
 
-const printMessages = (messages) => {
-    const formatted = messages.map(formatMessage)
-    formatted.forEach(e => console.log(e))
-}
 
 const uniqByKeepFirst = (arr, key) => {
     const seen = {};
@@ -422,14 +419,6 @@ function sleep(ms) {
 
 const filterLastDay = ({ date }) => new Date(date * 1e3) > dayRange()
 const dayRange = () => Date.now() - new Date(86400000 * msgHistory.olderByDays)
-const filterUsersMessages = ({ _ }) => _ === 'message'
-
-const formatMessage = ({ message, date, id }) => {
-    const dt = new Date(date * 1e3)
-    const hours = dt.getHours()
-    const mins = dt.getMinutes()
-    return `${hours}:${mins} [${id}] ${message}`
-}
 
 module.exports = {
     getChannelsID,
