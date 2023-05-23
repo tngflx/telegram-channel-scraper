@@ -213,12 +213,16 @@ const filter_locum_distance = async (msgs) => {
 
         for (const [channel_index, { parent_msg }] of chats.entries()) {
             let msg_body_lines = parent_msg.split('\n').filter((text) => text !== '')
+
+            // Skip if there is only one line in the message, most likely heated discussion only
+            if (msg_body_lines.length === 1) {
+                continue;
+            }
+
             msg_body_lines = msg_body_lines.map(text => { text = text.replace(emojiRegex, ''); return text.trim() })
 
             // Matches 'Klinik some', 'Poliklinik some','Sai poliklinik, 56000',
             let clinic_name = await reformatClinicName(msg_body_lines)
-            if (/kemuning/gi.test(clinic_name))
-                console.log('')
 
             let checked_clinic = false //If the clinic name checked before, stop process google map
 
@@ -240,7 +244,7 @@ const filter_locum_distance = async (msgs) => {
                 let malaysian_address = /(Lot|No|\d+).*(Jalan|Jln|Lorong|Lrg|Lebuhraya|Lebuh|Persiaran|Psn|Kampung|Kg|Menara).*,.*/gi
                 malaysian_address = msg_line.match(malaysian_address)
 
-                let locum_date = msg_line.match(/\d{1,2}\s?[.\-/]\s?\d{1,2}\s?[.\-/]\s?\d{2,4}|\d{1,2}\s?[a-zA-Z]+\s?\d{2,4}|\d{1,2}\s?[.\-/]\s?\d{1,2}/gi)
+                let locum_date = msg_line.match(/\d{1,2}\s?[.\-/]\s?\d{1,2}\s?[.\-/]\s?\d{2,4}|\d{1,2}\s?[a-zA-Z]+\s?\d{2,4}|\d{1,2}\s?[.\-/]\s?\d{1,2}/i)
 
                 if (clinic_name && !locum_rate && !checked_clinic) {
                     if (/chill|whatsapp/i.test(clinic_name)) continue;
@@ -310,7 +314,7 @@ const filter_locum_distance = async (msgs) => {
                             break;
                         }
                     }
-                    if (locum_date?.[0] && !phone_numbers && !work_time && !malaysian_address) {
+                    if (locum_date?.[0] && !phone_numbers && !malaysian_address) {
                         locum_date = new Date(Moment.Date.convertDateFormat(locum_date[0]))
                         let multiDatesArr = accepted_locum_per_channel[channel_index]?.['locum_date']?.['multiDatesArr']
 
@@ -338,7 +342,19 @@ const filter_locum_distance = async (msgs) => {
         }
         let combine_channel_name = {
             name,
-            ...accepted_locum_per_channel.sort((a, b) => a?.locum_date?.latest - b?.locum_date?.latest) //Reindex array back
+            ...accepted_locum_per_channel.sort((a, b) => {
+                const dateA = a?.locum_date?.latest
+                const dateB = b?.locum_date?.latest
+
+                if (dateA && dateB) {
+                    return dateB.getTime() - dateA.getTime();
+                } else if (dateA) {
+                    return -1; // Move objects with dateA to a lower index
+                } else if (dateB) {
+                    return 1; // Move objects with dateB to a lower index
+                }
+
+            }) //Sort array by timelatest and reindex back
         }
         accepted_locums.push(combine_channel_name)
         console.log(accepted_locums)
@@ -360,8 +376,8 @@ const reformatClinicName = (msg_body_lines) => {
             let [hospital_name] = checkIfContainKeyword(msg_line, ['hospital']) || [null];
             let [true_address] = msg_line.match(malaysian_address) || [null]
 
-            if (clinic_name && /for.*\d+|2023/i.test(clinic_name)) {
-                matched = clinic_name.replace('FOR ', '').replace(' 2023', '');
+            if (clinic_name && /for.*\d+|2023|\d{4}$/i.test(clinic_name)) {
+                matched = clinic_name.replace(/FOR | 2023|\d{4}/gi, '');
                 break;
             }
 

@@ -8,20 +8,17 @@ const config = {
         storage: process.env.TELEGRAM_FILE,
         devServer: false,
         msgHistory: {
-            olderByDays: 3,
+            olderByDays: 2,
             maxNumFiltrMsgsPerChannel: 100,
             maxNumUnfiltrMsgsPerChannel: 200,
-            skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady", "sonographer"],
+            skip_keywords: ["taken", "unpaid", "nurse", "pembantu", "female", "lady", "sonographer, symposium"],
             skip_location: ["JB", "Johor"],
             wanted_states: ['Selangor', 'Kuala Lumpur'],
             tolerable_travel_duration_min: 60,
             tolerable_work_duration_hours: 5,
             tolerable_lowest_rate: 40,
-            executeIntervalMin: 1
-        },
-        getChat: {
-            limit: 50
-        },
+            executeIntervalMin: 2
+        }
     },
     gmap: {
         API_KEY: process.env.GOOGLEMAP_API_KEY,
