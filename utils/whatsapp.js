@@ -83,9 +83,9 @@ class WhatsAppClient extends Client {
             this.myPhoneNum = await this.getPhoneNumId(phone)
             this.otherPhoneNum = await this.getPhoneNumId(SecParty_phone_num)
 
-            return super.getChats().then((chats) => {
-                const myGroup = chats.find((chat) => chat.name === this.myGroupName);
-
+            return super.getChats().then(chats => {
+                return chats.find((chat) => chat.name === this.myGroupName);
+            }).then(myGroup => {
                 if (process.env.NODE_ENV == 'dev' || clearMsg == true) {
                     myGroup.clearMessages().then(status => {
                         log.info('WA.clearMessages: ' + status)
@@ -129,6 +129,7 @@ class WhatsAppClient extends Client {
                 break;
             case 'my_group':
                 phoneNum = this.groupID;
+                if (!this.groupID) throw Error('groupID not found  ', this.groupID)
                 const groupChat = await super.getChatById(phoneNum);
                 return await groupChat.sendMessage(text);
                 break;
