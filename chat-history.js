@@ -373,7 +373,7 @@ const reformatClinicName = (msg_body_lines) => {
 
         for (const msg_line of msg_body_lines) {
             let [clinic_name] = msg_line.match(regex) || [null];
-            let [hospital_name] = checkIfContainKeyword(msg_line, ['hospital']) || [null];
+            let hospital_name = checkIfContainKeyword(msg_line, ['hospital']) || null;
             let [true_address] = msg_line.match(malaysian_address) || [null]
 
             if (clinic_name && /for.*\d+|2023|\d{4}$/i.test(clinic_name)) {
