@@ -4,7 +4,7 @@ const log = new Logger(LogLevel.DEBUG)
 
 const db = require('./utils/db');
 const { Api } = require("telegram");
-const { Gmap } = require('./utils/googlemap')
+const { Gmap } = require('./utils/maplib')
 const gmap = new Gmap()
 
 const { moment } = require('./utils/moment');
@@ -224,7 +224,13 @@ const filter_locum_distance = async (msgs) => {
             // Matches 'Klinik some', 'Poliklinik some','Sai poliklinik, 56000',
             let clinic_name = await reformatClinicName(msg_body_lines)
 
-            let checked_clinic = false //If the clinic name checked before, stop process google map
+            //If the clinic name checked before, stop process google map
+            let checked_clinic = accepted_locum_per_channel.reduce((acc, locum) => {
+                if (locum.clinic_name === clinic_name) {
+                    return true;
+                }
+                return acc;
+            }, false);
 
             for (const msg_line of msg_body_lines) {
                 // Extract rate from msg_line
@@ -251,13 +257,13 @@ const filter_locum_distance = async (msgs) => {
 
                     checked_clinic = true;
 
-                    let gmap_place = await gmap.getPlace(clinic_name)
-                    if (!gmap_place) break;
+                    let searched_place = await (gmap.getPlace(clinic_name))
+                    if (!searched_place) break;
 
-                    let gmap_distance = await gmap.getDistance(gmap_place)
-                    if (gmap_distance == 'state_too_far' || gmap_distance == null) break;
+                    let searched_distance = await gmap.getDistance(searched_place)
+                    if (searched_distance == 'state_too_far' || searched_distance == null) break;
                     else {
-                        let { distance, duration } = gmap_distance
+                        let { distance, duration } = searched_distance
 
                         const regex = /(?:(\d+)\s*(?:hour)s*\s*)?(\d+)\s*min(?:ute)?s*/i;
                         let [, hours, minutes] = duration.match(regex);
@@ -274,7 +280,7 @@ const filter_locum_distance = async (msgs) => {
                          * If travel duration is less than an hour, check for locum rate
                          */
                         if (parseInt(duration) < parseInt(tolerable_travel_duration_min)) {
-                            accepted_locum_per_channel[channel_index] = { full_msg: msg_body_lines, distance, travel_duration_min: duration }
+                            accepted_locum_per_channel[channel_index] = { full_msg: msg_body_lines, distance, travel_duration_min: duration, clinic_name }
                         }
                     }
 

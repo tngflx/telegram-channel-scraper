@@ -83,7 +83,7 @@ class WhatsAppClient extends Client {
             this.myPhoneNum = await this.getPhoneNumId(phone)
             this.otherPhoneNum = await this.getPhoneNumId(SecParty_phone_num)
 
-            return super.getChats().then(chats => {
+            return await super.getChats().then(chats => {
                 return chats.find((chat) => chat.name === this.myGroupName);
             }).then(myGroup => {
                 if (process.env.NODE_ENV == 'dev' || clearMsg == true) {

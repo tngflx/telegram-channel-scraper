@@ -20,9 +20,14 @@ const config = {
             executeIntervalMin: 2
         }
     },
-    gmap: {
-        API_KEY: process.env.GOOGLEMAP_API_KEY,
-        geolocate: true
+    mapLib: {
+        geolocate: true,
+        gmap: {
+            API_KEY: process.env.GOOGLEMAP_API_KEY,
+        },
+        radarMap: {
+            API_KEY: process.env.RADARMAP_API_KEY
+        }
     },
     whatsapp: {
         SecParty_phone_num: process.env.WHATSAPP_2NDPARTY_PHONE_NUMBER,
