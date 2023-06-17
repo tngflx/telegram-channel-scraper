@@ -4,11 +4,11 @@ const log = new Logger(LogLevel.DEBUG)
 
 const db = require('./utils/db');
 const { Api } = require("telegram");
-const { Gmap } = require('./utils/maplib')
-const gmap = new Gmap()
+const { hereMap } = require('./utils/maplib')
+const gmap = new hereMap()
 
 const { moment } = require('./utils/moment');
-const { checkIfContainKeyword } = require('./utils/helper');
+const { checkIfContainKeyword, sleep } = require('./utils/helper');
 const Moment = new moment()
 
 let GramClient, WAclient
@@ -433,10 +433,6 @@ const uniqueArray = function (myArr, prop) {
     return myArr.filter((obj, pos, arr) => {
         return arr.map(mapObj => mapObj[prop]).indexOf(obj[prop]) === pos;
     });
-}
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 const filterLastDay = ({ date }) => new Date(date * 1e3) > dayRange()

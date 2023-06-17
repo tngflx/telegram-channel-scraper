@@ -25,8 +25,8 @@ const config = {
         gmap: {
             API_KEY: process.env.GOOGLEMAP_API_KEY,
         },
-        radarMap: {
-            API_KEY: process.env.RADARMAP_API_KEY
+        hereMap: {
+            API_KEY: process.env.HEREMAP_API_KEY
         }
     },
     whatsapp: {

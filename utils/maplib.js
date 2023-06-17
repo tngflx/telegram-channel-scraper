@@ -1,7 +1,9 @@
 const { Client } = require("@googlemaps/google-maps-services-js");
-const { mapLib: { geolocate, gmap: { API_KEY: key }, radarMap }, telegram: { msgHistory } } = require('../config');
+const { mapLib: { geolocate, gmap: { API_KEY: gmapKey }, hereMap: { API_KEY: hereMapKey } }, telegram: { msgHistory } } = require('../config');
 const { Logger, LogLevel } = require("./logger");
 const { updateFail } = require('./db');
+const { sleep } = require("./helper");
+
 const head = new Headers()
 
 const log = new Logger(LogLevel.DEBUG)
@@ -11,6 +13,7 @@ class Gmap {
         this.client = new Client()
         this.currentLocation = null;
         this._initialize();
+        this.API_KEY = gmapKey
     }
 
     async getBudget() {
@@ -55,7 +58,7 @@ class Gmap {
         //await this.getBudget()
 
         if (typeof geolocate == 'boolean' && geolocate) {
-            return this.client.geolocate({ params: { key }, data: { considerIp: true } })
+            return this.client.geolocate({ params: { key: this["API_KEY"] }, data: { considerIp: true } })
                 .then(({ data }) => {
                     const { lat, lng } = data.location;
                     log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
@@ -72,6 +75,138 @@ class Gmap {
     }
 
     async getDistance({ place_id, formatted_address }) {
+        /**
+         * Only proceed on with distancematrix api if locum
+         * situated in nearby area
+         */
+        formatted_address = formatted_address.split(",")
+            .slice(-3)
+            .map((address) => address.trim())
+
+        const checkIfContainWantedCity = msgHistory.wanted_states.some(value =>
+            formatted_address.includes(value)
+        );
+        if (!checkIfContainWantedCity) return 'state_too_far';
+
+        const params = {
+            key: this["API_KEY"],
+            origins: [this.currentLocation],
+            destinations: [`place_id:${place_id}`],
+            mode: 'driving',
+            units: 'metric'
+        };
+
+        return this.client.distancematrix({ params })
+            .then(({ data }) => {
+                const { distance, duration } = data.rows[0].elements[0];
+                return {
+                    distance: distance.text,
+                    duration: duration.text
+                };
+            }).catch((error) => {
+                log.error(error?.response?.data?.error_message);
+                return null;
+            })
+
+    }
+
+    /**
+     * Todo : To include address on another msg_line to make it more specific location
+     * @param {any} place
+     * @returns
+     */
+    getPlace(place) {
+        const params = {
+            key: this["API_KEY"],
+            input: place,
+            inputtype: 'textquery',
+            fields: ['place_id', 'formatted_address', 'name', 'geometry']
+        };
+
+        return this.client.findPlaceFromText({ params })
+            .then(({ data }) => {
+                let { place_id, name, formatted_address, geometry } = data?.candidates[0] || null;
+
+                return {
+                    place_id,
+                    name,
+                    formatted_address,
+                    location: geometry?.location
+                };
+
+            }).catch(async (error) => {
+                await updateFail(place)
+                log.error(error);
+                return null;
+            })
+
+    }
+
+
+}
+
+class hereMap extends Gmap {
+    constructor() {
+        super()
+        this._initialize(); 
+        this.API_KEY = hereMapKey
+    }
+
+    async _initialize() {
+        await super._initialize()
+
+        //const geolocateUrl = `https://positioning.hereapi.com/v2/locate?apiKey=${this.API_KEY}`;
+
+        //if (typeof geolocate == 'boolean' && geolocate) {
+        //    return fetch(geolocateUrl, {
+        //        method: 'POST',
+        //        headers: {
+        //            'Content-Type': 'application/json'
+        //        }
+        //    })
+        //        .then(response => response.json())
+        //        .then(data => {
+        //            const { lat, lng } = data.location;
+        //            log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
+        //            this.currentLocation = `${lat},${lng}`
+        //        })
+        //        .catch((err) => {
+        //            log.error(err);
+        //        })
+        //} else if (Array.isArray(geolocate)) {
+        //    const [lat, lng] = geolocate
+        //    log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
+        //    this.currentLocation = `${lat},${lng}`
+        //}
+    }
+
+    async getPlace(address) {
+        await sleep(500)
+
+        this.currentLocation = this.currentLocation.replace(/\s+/g, '')
+        const placeUrl = `https://autosuggest.search.hereapi.com/v1/autosuggest?at=${this.currentLocation}&limit=5&q=${encodeURIComponent(address)}&apiKey=${this.API_KEY}`
+
+        return fetch(placeUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.items.length > 0) {
+                    const { lat, lng } = data.items[0].position;
+                    console.log(`Latitude: ${lat}`);
+                    console.log(`Longitude: ${lng}`);
+                    return { lat, lng }
+                } else {
+                    console.log('Geocoding failed. Please check your API key and address.');
+                }
+            })
+            .catch(error => {
+                console.log('An error occurred:', error);
+            });
+
+    }
+
+    async getDistance({ place_id, formatted_address }) {
+        let origin = place_id
+        const distanceUrl = `https://router.hereapi.com/v8/routes?transportMode=car&origin=${origin}&destination=${destination}&return=summary&apikey=${this.API_KEY}`
         /**
          * Only proceed on with distancematrix api if locum
          * situated in nearby area
@@ -106,115 +241,9 @@ class Gmap {
             })
 
     }
-
-    /**
-     * Todo : To include address on another msg_line to make it more specific location
-     * @param {any} place
-     * @returns
-     */
-    getPlace(place) {
-        const params = {
-            key,
-            input: place,
-            inputtype: 'textquery',
-            fields: ['place_id', 'formatted_address', 'name', 'geometry']
-        };
-
-        return this.client.findPlaceFromText({ params })
-            .then(({ data }) => {
-                let { place_id, name, formatted_address, geometry } = data?.candidates[0] || null;
-
-                return {
-                    place_id,
-                    name,
-                    formatted_address,
-                    location: geometry?.location
-                };
-
-            }).catch(async (error) => {
-                await updateFail(place)
-                log.error(error);
-                return null;
-            })
-
-    }
 }
 
-//class radarMap {
-
-//    constructor() {
-//        this.client = new Client()
-//        this.currentLocation = ''
-//        this._initialize()
-//    }
-
-//    _initialize() {
-//        if (typeof geolocate == 'boolean' && geolocate) {
-//            return this.client.geolocate({ params: { key }, data: { considerIp: true } })
-//                .then(({ data }) => {
-//                    const { lat, lng } = data.location;
-//                    log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
-//                    this.currentLocation = [lat, lng]
-//                })
-//                .catch((err) => {
-//                    log.error(err);
-//                })
-//        } else if (Array.isArray(geolocate)) {
-//            const [lat, lng] = geolocate
-//            log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
-//            this.currentLocation = [lat, lng]
-//        }
-//    }
-
-//    getPlace(address) {
-//        const url = `https://api.radar.io/v1/geocode/forward?query=${encodeURIComponent(address)}&country=MY`;
-
-//        return fetch(url, {
-//            headers: {
-//                Authorization: radarMap.API_KEY
-//            }
-//        }).then(response =>
-//            response.json())
-//            .then(data => {
-//                // Extract latitude and longitude
-//                const { latitude, longitude } = data.addresses[0];
-//                return { latitude, longitude };
-//            })
-//            .catch(error => {
-//                console.error('Geocode Forward API Error:', error);
-//                throw error;
-//            });
-//    }
-
-//    // Get Travel Duration API
-//    getDistance(origin, destination) {
-//        return null;
-//        return geocodeForward(origin)
-//            .then(originLocation => geocodeForward(destination))
-//            .then(destinationLocation => {
-//                const url = `https://api.radar.io/v1/route/duration?origin=${originLocation.latitude},${originLocation.longitude}&destination=${destinationLocation.latitude},${destinationLocation.longitude}`;
-//                const options = {
-//                    headers: {
-//                        Authorization: `Bearer ${radarMap.API_KEY}`
-//                    }
-//                };
-
-//                return fetch(url, options)
-//                    .then(response => response.json())
-//                    .then(data => {
-//                        // Extract travel duration
-//                        const { duration } = data.routes[0];
-//                        return duration;
-//                    });
-//            })
-//            .catch(error => {
-//                console.error('Get Travel Duration API Error:', error);
-//                throw error;
-//            });
-//    }
-
-//}
-
 module.exports = {
-    Gmap
+    Gmap,
+    hereMap
 }

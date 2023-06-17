@@ -14,8 +14,12 @@ const checkIfContainKeyword = (strings, keywords) => {
     let trimmed_lower_strings = strings.trim().toLowerCase();
     return keywords.some((substr) => trimmed_lower_strings.includes(substr))
 }
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 module.exports = {
     callbackPromise,
-    checkIfContainKeyword
+    checkIfContainKeyword,
+    sleep
 }
