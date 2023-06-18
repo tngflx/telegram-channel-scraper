@@ -4,7 +4,7 @@ const log = new Logger(LogLevel.DEBUG)
 
 const db = require('./utils/db');
 const { Api } = require("telegram");
-const { hereMap } = require('./utils/maplib')
+const { Gmap, hereMap } = require('./utils/maplib')
 const gmap = new hereMap()
 
 const { moment } = require('./utils/moment');

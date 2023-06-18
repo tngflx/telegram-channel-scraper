@@ -21,7 +21,7 @@ const config = {
         }
     },
     mapLib: {
-        geolocate: true,
+        geolocate: [3.0466377, 101.6044125],
         gmap: {
             API_KEY: process.env.GOOGLEMAP_API_KEY,
         },

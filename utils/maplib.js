@@ -12,8 +12,8 @@ class Gmap {
     constructor() {
         this.client = new Client()
         this.currentLocation = null;
-        this._initialize();
         this.API_KEY = gmapKey
+        this._initialize()
     }
 
     async getBudget() {
@@ -58,7 +58,7 @@ class Gmap {
         //await this.getBudget()
 
         if (typeof geolocate == 'boolean' && geolocate) {
-            return this.client.geolocate({ params: { key: this["API_KEY"] }, data: { considerIp: true } })
+            return this.client.geolocate({ params: { key: this.API_KEY }, data: { considerIp: true } })
                 .then(({ data }) => {
                     const { lat, lng } = data.location;
                     log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
@@ -150,7 +150,6 @@ class hereMap extends Gmap {
     firstRun = true
     constructor() {
         super()
-        this._initialize();
         this.API_KEY = hereMapKey
     }
 
@@ -203,8 +202,16 @@ class hereMap extends Gmap {
 
         return fetch(routeURL)
             .then(response => response.json())
-            .then(data => {
-                console.log(data)
+            .then(({ routes }) => {
+                const durationInSeconds = routes[0].sections[0].summary.duration;
+                const hours = Math.floor(durationInSeconds / 3600);
+                const minutes = Math.floor((durationInSeconds % 3600) / 60);
+                const distance = routes[0].sections[0].summary.length;
+
+                return {
+                    distance,
+                    duration: hours == 0 ? `${minutes}mins` : `${hours}hour ${minutes}mins`
+                };
             }).catch((error) => {
                 log.error(error?.response?.data?.error_message);
                 return null;
