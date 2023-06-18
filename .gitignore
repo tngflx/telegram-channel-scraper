@@ -18,3 +18,4 @@ bin
 /session-whatsapp
 /libman.json
 /.wwebjs_cache
+/.env-example

@@ -54,7 +54,7 @@ class Gmap {
             });
     }
 
-    async _initialize() {
+    _initialize() {
         //await this.getBudget()
 
         if (typeof geolocate == 'boolean' && geolocate) {
@@ -63,6 +63,7 @@ class Gmap {
                     const { lat, lng } = data.location;
                     log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
                     this.currentLocation = `${lat}, ${lng}`
+                    return { lat, lng }
                 })
                 .catch((err) => {
                     log.error(err);
@@ -146,42 +147,18 @@ class Gmap {
 }
 
 class hereMap extends Gmap {
+    firstRun = true
     constructor() {
         super()
-        this._initialize(); 
+        this._initialize();
         this.API_KEY = hereMapKey
     }
 
-    async _initialize() {
-        await super._initialize()
-
-        //const geolocateUrl = `https://positioning.hereapi.com/v2/locate?apiKey=${this.API_KEY}`;
-
-        //if (typeof geolocate == 'boolean' && geolocate) {
-        //    return fetch(geolocateUrl, {
-        //        method: 'POST',
-        //        headers: {
-        //            'Content-Type': 'application/json'
-        //        }
-        //    })
-        //        .then(response => response.json())
-        //        .then(data => {
-        //            const { lat, lng } = data.location;
-        //            log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
-        //            this.currentLocation = `${lat},${lng}`
-        //        })
-        //        .catch((err) => {
-        //            log.error(err);
-        //        })
-        //} else if (Array.isArray(geolocate)) {
-        //    const [lat, lng] = geolocate
-        //    log.warn(`My location : { Latitude: ${lat}, Longitude: ${lng} }`);
-        //    this.currentLocation = `${lat},${lng}`
-        //}
-    }
-
     async getPlace(address) {
-        await sleep(500)
+        if (!this.firstRun) {
+            await sleep(500)
+            this.firstRun = false
+        }
 
         this.currentLocation = this.currentLocation.replace(/\s+/g, '')
         const placeUrl = `https://autosuggest.search.hereapi.com/v1/autosuggest?at=${this.currentLocation}&limit=5&q=${encodeURIComponent(address)}&apiKey=${this.API_KEY}`
@@ -190,10 +167,13 @@ class hereMap extends Gmap {
             .then(response => response.json())
             .then(data => {
                 if (data.items.length > 0) {
-                    const { lat, lng } = data.items[0].position;
-                    console.log(`Latitude: ${lat}`);
-                    console.log(`Longitude: ${lng}`);
-                    return { lat, lng }
+                    const { position: { lat, lng }, id, address: { label } } = data.items[0] || null;
+
+                    return {
+                        address: label,
+                        place_id: id,
+                        destination: `${lat},${lng}`
+                    }
                 } else {
                     console.log('Geocoding failed. Please check your API key and address.');
                 }
@@ -204,37 +184,27 @@ class hereMap extends Gmap {
 
     }
 
-    async getDistance({ place_id, formatted_address }) {
-        let origin = place_id
-        const distanceUrl = `https://router.hereapi.com/v8/routes?transportMode=car&origin=${origin}&destination=${destination}&return=summary&apikey=${this.API_KEY}`
+    getDistance({ destination, address }) {
+        let origin = this.currentLocation
+
+        const routeURL = `https://router.hereapi.com/v8/routes?transportMode=car&origin=${origin}&destination=${destination}&return=summary&apikey=${this.API_KEY}`
         /**
          * Only proceed on with distancematrix api if locum
          * situated in nearby area
          */
-        formatted_address = formatted_address.split(",")
+        address = address.split(",")
             .slice(-3)
             .map((address) => address.trim())
 
         const checkIfContainWantedCity = msgHistory.wanted_states.some(value =>
-            formatted_address.includes(value)
+            address.includes(value)
         );
         if (!checkIfContainWantedCity) return 'state_too_far';
 
-        const params = {
-            key,
-            origins: [this.currentLocation],
-            destinations: [`place_id:${place_id}`],
-            mode: 'driving',
-            units: 'metric'
-        };
-
-        return this.client.distancematrix({ params })
-            .then(({ data }) => {
-                const { distance, duration } = data.rows[0].elements[0];
-                return {
-                    distance: distance.text,
-                    duration: duration.text
-                };
+        return fetch(routeURL)
+            .then(response => response.json())
+            .then(data => {
+                console.log(data)
             }).catch((error) => {
                 log.error(error?.response?.data?.error_message);
                 return null;
