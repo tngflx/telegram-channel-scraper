@@ -3,6 +3,7 @@ const { mapLib: { geolocate, gmap: { API_KEY: gmapKey }, hereMap: { API_KEY: her
 const { Logger, LogLevel } = require("./logger");
 const { updateFail } = require('./db');
 const { sleep } = require("./helper");
+const { gAuth } = require("./gbudget");
 
 const head = new Headers()
 
@@ -10,52 +11,15 @@ const log = new Logger(LogLevel.DEBUG)
 
 class Gmap {
     constructor() {
+        this.gAuth = new gAuth()
         this.client = new Client()
         this.currentLocation = null;
         this.API_KEY = gmapKey
         this._initialize()
     }
 
-    async getBudget() {
-        const projectId = 'winged-cargo-194715';
-        const billingaccountID = '01F71E-AEA749-64B853';
-        const apiKey = 'ya29.a0AWY7CkkKwnGGqW3gBgtvaZOXM43hmkwcS9IXWkk_6i2wKmHziZnmNwA901cOT37Iqz30Ti0JTuBIWqy-nWBHPlaL_2V6GJcNOq3BgBfHFAFtriF8pyhxOKj76QgZkomyAXRk50UejAjtoJYwKTFKKb3IUtf3iVhcZimEMQaCgYKAZoSARESFQG1tDrpCHyHub0BxzrpsCmmB7sHKQ0173';
-        const budgetID = '586dfa9a-89c1-4247-9793-b17de057ab15'
-        const url = `https://billingbudgets.googleapis.com/v1/billingAccounts/${billingaccountID}/budgets/${budgetID}`;
-
-        const options = {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'x-goog-user-project': projectId,
-                'Content-Type': 'application/json'
-            }
-        };
-
-        await fetch(url, options)
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                } else {
-                    throw new Error(`Request failed with status code ${response.status}`);
-                }
-            })
-            .then(data => {
-                const budget = data.budgetAmount?.specifiedAmount?.amount || 0;
-                const currentSpend = data.amount?.spentAmount?.amount || 0;
-                const percentage = (currentSpend / budget) * 100;
-
-                console.log('Budget:', data);
-                console.log('Current Spend:', currentSpend);
-                console.log('Budget Percentage:', percentage);
-            })
-            .catch(error => {
-                console.error('Error:', error.message);
-            });
-    }
-
-    _initialize() {
-        //await this.getBudget()
+    async _initialize() {
+        await this.gAuth.getBudget()
 
         if (typeof geolocate == 'boolean' && geolocate) {
             return this.client.geolocate({ params: { key: this.API_KEY }, data: { considerIp: true } })
